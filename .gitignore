@@ -83,6 +83,10 @@ credentials.json
 *.pem
 *.key
 
+# Streamlit secrets (API keys, user data)
+.streamlit/secrets.toml
+.streamlit/usage.json
+
 # Model files (if any large downloads)
 models/
 

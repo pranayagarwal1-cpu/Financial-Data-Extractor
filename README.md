@@ -6,6 +6,20 @@
 
 ---
 
+## 🆓 Free Tier | ⭐ Pro Tier ($29/month)
+
+| Feature | Free | Pro |
+|---------|------|-----|
+| Extractions/month | 2 | Unlimited |
+| Processing speed | Standard | Priority |
+| Output formats | Excel + JSON | Excel + JSON |
+| Analytics dashboard | ✅ | ✅ |
+| Support | Community | Priority |
+
+[**Upgrade to Pro →**](https://buy.stripe.com/YOUR_PAYMENT_LINK)
+
+---
+
 ## The Problem
 
 Financial analysts spend hours manually copying data from PDF annual reports into Excel. This process is:

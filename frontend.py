@@ -2,6 +2,10 @@
 Streamlit Frontend for Multi-Agent Financial Statement Extractor
 
 Run with: streamlit run frontend.py
+
+Freemium Model:
+- Free Tier: 2 extractions per month
+- Pro Tier: Unlimited extractions ($29/month)
 """
 
 import streamlit as st
@@ -15,6 +19,7 @@ import pandas as pd
 # Import workflow and statement types
 from graph.workflow import create_workflow
 from utils.vlm_utils import StatementType
+from utils.freemium import UsageTracker, init_usage_session, check_extraction_limit, render_usage_indicator, FREE_TIER_LIMIT
 
 # -----------------------------------------------------------------------------
 # Paths
@@ -54,7 +59,6 @@ def process_pdf(pdf_path: str, statement_types: list):
     }
     try:
         final_state = workflow.invoke(initial_state)
-        # Ensure run is ended on error
         if final_state.get("error_message") and not final_state.get("output_files"):
             run_id = final_state.get("run_id")
             if run_id:
@@ -72,9 +76,57 @@ def load_excel(path: Path):
 
 
 # -----------------------------------------------------------------------------
+# Page Config
+# -----------------------------------------------------------------------------
+st.set_page_config(
+    page_title="Financial Statement Extractor",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# -----------------------------------------------------------------------------
+# Initialize Freemium Model
+# -----------------------------------------------------------------------------
+
+# User email input (in production, replace with real auth)
+if "user_email" not in st.session_state:
+    st.session_state["user_email"] = ""
+
+if "usage_tracker" not in st.session_state:
+    st.session_state["usage_tracker"] = UsageTracker()
+
+# Login / User identification
+if not st.session_state["user_email"]:
+    st.title("📊 Financial Statement Extractor")
+    st.markdown("### Welcome! Please enter your email to continue")
+
+    email_input = st.text_input("Email address", placeholder="analyst@company.com")
+
+    if st.button("Continue", type="primary"):
+        if email_input:
+            st.session_state["user_email"] = email_input
+            init_usage_session(email_input)
+            st.rerun()
+    st.stop()
+
+# Initialize session for logged-in user
+init_usage_session(st.session_state["user_email"])
+
+# -----------------------------------------------------------------------------
 # Sidebar
 # -----------------------------------------------------------------------------
 with st.sidebar:
+    # User info
+    st.markdown(f"**👤 {st.session_state['user_email']}**")
+    st.divider()
+
+    # Usage indicator (Free vs Pro)
+    render_usage_indicator()
+
+    st.divider()
+
+    # Upload section
     st.header("📁 Upload PDF")
 
     uploaded_file = st.file_uploader(
@@ -89,7 +141,6 @@ with st.sidebar:
             f.write(uploaded_file.getbuffer())
         st.success(f"✅ {uploaded_file.name}")
         st.session_state["uploaded_pdf"] = str(pdf_path)
-        # Increment session counter only if this is a new file
         if "last_uploaded_file" not in st.session_state or st.session_state.get("last_uploaded_file") != uploaded_file.name:
             st.session_state["pdfs_uploaded"] = st.session_state.get("pdfs_uploaded", 0) + 1
             st.session_state["last_uploaded_file"] = uploaded_file.name
@@ -120,7 +171,6 @@ with st.sidebar:
         files_deleted = 0
 
         def clean_directory(directory: Path) -> int:
-            """Recursively delete all files and subdirectories, return count."""
             count = 0
             if not directory.exists():
                 return 0
@@ -128,7 +178,6 @@ with st.sidebar:
                 if item.is_file():
                     item.unlink()
                     count += 1
-            # Remove empty subdirectories
             for item in sorted(directory.rglob("*"), key=lambda p: len(str(p)), reverse=True):
                 if item.is_dir():
                     item.rmdir()
@@ -139,7 +188,6 @@ with st.sidebar:
         files_deleted += clean_directory(TMP_DIR)
 
         st.success(f"✅ {files_deleted} files deleted!")
-        # Reset all session state
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
@@ -161,11 +209,56 @@ with st.sidebar:
         st.session_state["show_metrics"] = not st.session_state.get("show_metrics", False)
 
 # -----------------------------------------------------------------------------
-# Main Content - Metrics
+# Upgrade Modal (shown when user clicks upgrade)
+# -----------------------------------------------------------------------------
+if st.session_state.get("show_upgrade_modal"):
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                padding: 30px; border-radius: 15px; margin: 20px 0; color: white;">
+        <h2 style="margin: 0;">⭐ Upgrade to Pro</h2>
+        <p style="font-size: 1.2em; margin: 10px 0;">Unlock unlimited extractions</p>
+        <ul style="font-size: 1em;">
+            <li>✅ Unlimited extractions (no monthly cap)</li>
+            <li>✅ Priority processing</li>
+            <li>✅ All statement types (Balance Sheet, Income Statement, Cash Flow)</li>
+            <li>✅ Excel + JSON downloads</li>
+            <li>✅ Usage analytics dashboard</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        # Stripe Payment Link - REPLACE WITH YOUR ACTUAL LINK
+        stripe_link = "https://buy.stripe.com/YOUR_PAYMENT_LINK_HERE"
+
+        st.markdown(f"""
+        <div style="text-align: center; padding: 20px;">
+            <p style="font-size: 2em; font-weight: bold; margin: 10px 0;">$29<span style="font-size: 0.5em; font-weight: normal;">/month</span></p>
+            <a href="{stripe_link}" target="_blank"
+               style="background: #059669; color: white; padding: 15px 40px;
+                      text-decoration: none; border-radius: 8px; font-weight: bold;
+                      display: inline-block; margin: 10px 0;">
+                🚀 Upgrade to Pro Now
+            </a>
+            <p style="font-size: 0.8em; color: #666; margin-top: 15px;">
+                Secure checkout powered by Stripe
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if st.button("Close", use_container_width=True):
+            st.session_state["show_upgrade_modal"] = False
+            st.rerun()
+
+    st.divider()
+
+# -----------------------------------------------------------------------------
+# Main Content
 # -----------------------------------------------------------------------------
 st.title("📊 Financial Statement Extractor")
 
-# Initialize session counters on first load
+# Initialize session counters
 if "pdfs_uploaded" not in st.session_state:
     st.session_state["pdfs_uploaded"] = 0
 if "extracted_count" not in st.session_state:
@@ -177,7 +270,7 @@ if "json_count" not in st.session_state:
 if "extraction_counted" not in st.session_state:
     st.session_state["extraction_counted"] = False
 
-# Track successful extractions (only once per extraction)
+# Track successful extractions
 if st.session_state.get("processing_complete") and not st.session_state.get("extraction_counted"):
     final_state = st.session_state.get("final_state", {})
     if final_state.get("output_files"):
@@ -202,41 +295,53 @@ with col4:
     st.metric("📄 JSON", st.session_state["json_count"])
 
 # -----------------------------------------------------------------------------
-# Process Button
+# Process Button with Freemium Check
 # -----------------------------------------------------------------------------
 if "uploaded_pdf" in st.session_state:
     st.divider()
 
-    # Show selected statements
     if selected_statements:
         st.caption(f"📊 Extracting: {', '.join([statement_options[s] for s in selected_statements])}")
 
-    process_btn = st.button("🚀 Extract Statements", type="primary", use_container_width=True)
+    # Check extraction limit BEFORE processing
+    stats = st.session_state.get("usage_stats", {})
+    tier = stats.get("tier", "free")
+    current = stats.get("extractions_this_month", 0)
+    limit = stats.get("limit", FREE_TIER_LIMIT)
 
-    if process_btn:
-        if not selected_statements:
-            st.warning("Please select at least one statement type to extract.")
-        else:
-            pdf_path = st.session_state["uploaded_pdf"]
-            pdf_name = Path(pdf_path).stem
-
-            st.divider()
-            st.header("⏳ Processing")
-
-            progress_bar = st.progress(0)
-            log_container = st.expander("📝 Processing Log", expanded=True)
-            log_text = log_container.empty()
-
-            try:
-                final_state = process_pdf(pdf_path, selected_statements)
-            finally:
-                pass
-
-            progress_bar.progress(100)
-            st.session_state["processing_complete"] = True
-            st.session_state["final_state"] = final_state
-            st.session_state["pdf_name"] = pdf_name
+    if tier == "free" and current >= limit:
+        st.error(f"⚠️ Free tier limit reached ({current}/{limit} extractions this month)")
+        st.info("👉 Upgrade to Pro for unlimited extractions")
+        if st.button("⬆️ Upgrade to Pro", type="primary", use_container_width=True):
+            st.session_state["show_upgrade_modal"] = True
             st.rerun()
+    else:
+        process_btn = st.button("🚀 Extract Statements", type="primary", use_container_width=True)
+
+        if process_btn:
+            if not selected_statements:
+                st.warning("Please select at least one statement type to extract.")
+            else:
+                pdf_path = st.session_state["uploaded_pdf"]
+                pdf_name = Path(pdf_path).stem
+
+                st.divider()
+                st.header("⏳ Processing")
+
+                progress_bar = st.progress(0)
+                log_container = st.expander("📝 Processing Log", expanded=True)
+                log_text = log_container.empty()
+
+                try:
+                    final_state = process_pdf(pdf_path, selected_statements)
+                finally:
+                    pass
+
+                progress_bar.progress(100)
+                st.session_state["processing_complete"] = True
+                st.session_state["final_state"] = final_state
+                st.session_state["pdf_name"] = pdf_name
+                st.rerun()
 
 # -----------------------------------------------------------------------------
 # Results Section
@@ -258,7 +363,6 @@ if st.session_state.get("processing_complete"):
     elif final_state.get("output_files"):
         st.success("✅ Extraction Complete!")
 
-        # Show processing log
         log_file = final_state.get("log_file")
         if log_file and Path(log_file).exists():
             st.divider()
@@ -271,10 +375,8 @@ if st.session_state.get("processing_complete"):
         json_files = [f for f in output_files if f.endswith(".json")]
         excel_files = [f for f in output_files if f.endswith(".xlsx")]
 
-        # Download buttons grouped by statement type
         st.markdown("### 📥 Download Files")
 
-        # Group files by statement type
         from pathlib import Path
         statement_files = {}
         for f in output_files:
@@ -288,7 +390,6 @@ if st.session_state.get("processing_complete"):
                     elif f_path.suffix == ".xlsx":
                         statement_files[st_type]["excel"] = f_path
 
-        # Show download buttons for each statement type
         for st_type, files in statement_files.items():
             st.markdown(f"**{statement_options[st_type]}**")
             col1, col2 = st.columns(2)
@@ -313,7 +414,6 @@ if st.session_state.get("processing_complete"):
                             use_container_width=True
                         )
 
-        # Evaluation Results
         st.divider()
         st.header("⚖️ AI Evaluation (Reference)")
         st.caption("AI scores are for reference only. Always verify manually.")
@@ -345,7 +445,6 @@ if st.session_state.get("processing_complete"):
 
                     st.divider()
 
-        # Download original PDF
         st.markdown("### 📥 Original Document")
         pdf_path = st.session_state.get("uploaded_pdf")
         if pdf_path and Path(pdf_path).exists():
@@ -367,11 +466,9 @@ if st.session_state.get("show_metrics", False):
     from utils.observability import get_observability
     obs = get_observability()
 
-    # Get recent runs
     recent_runs = obs.get_recent_runs(limit=20)
 
     if recent_runs:
-        # Summary stats
         stats = obs.get_stats(days=7)
 
         col1, col2, col3, col4 = st.columns(4)
@@ -386,7 +483,6 @@ if st.session_state.get("show_metrics", False):
 
         st.divider()
 
-        # Recent runs table
         st.subheader("📋 Recent Runs")
         if recent_runs:
             runs_df = pd.DataFrame(recent_runs)
@@ -398,12 +494,10 @@ if st.session_state.get("show_metrics", False):
             display_df["Timestamp"] = pd.to_datetime(display_df["Timestamp"]).dt.strftime("%Y-%m-%d %H:%M")
             st.dataframe(display_df, use_container_width=True, hide_index=True)
 
-        # Charts
         st.divider()
         st.subheader("📊 Trends")
 
         if len(recent_runs) > 1:
-            # Duration trend
             duration_data = pd.DataFrame(recent_runs)[["timestamp", "total_duration_sec"]].copy()
             duration_data["timestamp"] = pd.to_datetime(duration_data["timestamp"])
             duration_data = duration_data.sort_values("timestamp")
