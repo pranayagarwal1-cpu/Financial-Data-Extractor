@@ -2,10 +2,6 @@
 Streamlit Frontend for Multi-Agent Financial Statement Extractor
 
 Run with: streamlit run frontend.py
-
-Freemium Model:
-- Free Tier: 2 extractions per month
-- Pro Tier: Unlimited extractions ($29/month)
 """
 
 import streamlit as st
@@ -19,7 +15,6 @@ import pandas as pd
 # Import workflow and statement types
 from graph.workflow import create_workflow
 from utils.vlm_utils import StatementType
-from utils.freemium import UsageTracker, init_usage_session, check_extraction_limit, render_usage_indicator, FREE_TIER_LIMIT
 
 # -----------------------------------------------------------------------------
 # Paths
@@ -46,10 +41,14 @@ def get_output_files_for_pdf(pdf_name: str):
     return files
 
 
-def process_pdf(pdf_path: str, statement_types: list):
-    """Process a PDF through the workflow and return results."""
+def process_pdf(pdf_path: str, statement_types: list, log_callback=None):
+    """Process a PDF through the workflow and return results with logs."""
     from utils.observability import get_observability
     obs = get_observability()
+
+    # Log callback
+    if log_callback:
+        log_callback("🔍 Analyzing PDF structure...")
 
     workflow = create_workflow(statement_types)
     initial_state = {
@@ -57,15 +56,23 @@ def process_pdf(pdf_path: str, statement_types: list):
         "statement_types": statement_types,
         "retry_count": 0
     }
+
+    if log_callback:
+        log_callback("📄 Detecting financial statements...")
+
     try:
         final_state = workflow.invoke(initial_state)
         if final_state.get("error_message") and not final_state.get("output_files"):
             run_id = final_state.get("run_id")
             if run_id:
                 obs.end_run(run_id=run_id, success=False, error_message=final_state["error_message"])
+        if log_callback:
+            log_callback("✅ Extraction complete!")
         return final_state
     except Exception as e:
         obs.end_run(run_id=initial_state.get("run_id", ""), success=False, error_message=str(e))
+        if log_callback:
+            log_callback(f"❌ Error: {str(e)}")
         return {"error_message": str(e)}
 
 
@@ -86,48 +93,20 @@ st.set_page_config(
 )
 
 # -----------------------------------------------------------------------------
-# Initialize Freemium Model
-# -----------------------------------------------------------------------------
-
-# User email input (in production, replace with real auth)
-if "user_email" not in st.session_state:
-    st.session_state["user_email"] = ""
-
-if "usage_tracker" not in st.session_state:
-    st.session_state["usage_tracker"] = UsageTracker()
-
-# Login / User identification
-if not st.session_state["user_email"]:
-    st.title("📊 Financial Statement Extractor")
-    st.markdown("### Welcome! Please enter your email to continue")
-
-    email_input = st.text_input("Email address", placeholder="analyst@company.com")
-
-    if st.button("Continue", type="primary"):
-        if email_input:
-            st.session_state["user_email"] = email_input
-            init_usage_session(email_input)
-            st.rerun()
-    st.stop()
-
-# Initialize session for logged-in user
-init_usage_session(st.session_state["user_email"])
-
-# -----------------------------------------------------------------------------
 # Sidebar
 # -----------------------------------------------------------------------------
 with st.sidebar:
-    # User info
-    st.markdown(f"**👤 {st.session_state['user_email']}**")
-    st.divider()
-
-    # Usage indicator (Free vs Pro)
-    render_usage_indicator()
-
-    st.divider()
-
     # Upload section
     st.header("📁 Upload PDF")
+
+    # Center align upload button and caption
+    st.markdown(
+        "<style>"
+        "div[data-testid='stFileUploader'] {text-align: center;}"
+        "div[data-testid='stFileUploader'] > div {margin: 0 auto;}"
+        "</style>",
+        unsafe_allow_html=True
+    )
 
     uploaded_file = st.file_uploader(
         "Choose a PDF",
@@ -155,23 +134,12 @@ with st.sidebar:
         StatementType.CASH_FLOW: "Cash Flow Statement"
     }
 
-    # Check if user is free tier - limit to 1 statement at a time
-    stats = st.session_state.get("usage_stats", {})
-    tier = stats.get("tier", "free")
-    is_pro = tier == "pro"
-
     selected_statements = st.multiselect(
         "Select statements:",
         options=list(statement_options.keys()),
         default=[StatementType.BALANCE_SHEET],
-        format_func=lambda x: statement_options[x],
-        help="Free tier: 1 statement at a time | Pro: Extract all statements simultaneously"
+        format_func=lambda x: statement_options[x]
     )
-
-    # Free tier limitation
-    if not is_pro and len(selected_statements) > 1:
-        st.warning("⚠️ Free tier: Select only 1 statement at a time. Upgrade to Pro for multi-statement extraction.")
-        selected_statements = selected_statements[:1]
 
     st.session_state["selected_statements"] = selected_statements
 
@@ -220,53 +188,27 @@ with st.sidebar:
         st.session_state["show_metrics"] = not st.session_state.get("show_metrics", False)
 
 # -----------------------------------------------------------------------------
-# Upgrade Modal (shown when user clicks upgrade)
+# Contact CTA Button (top right corner)
 # -----------------------------------------------------------------------------
-if st.session_state.get("show_upgrade_modal"):
-    st.markdown("""
-    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                padding: 30px; border-radius: 15px; margin: 20px 0; color: white;">
-        <h2 style="margin: 0;">⭐ Upgrade to Pro</h2>
-        <p style="font-size: 1.2em; margin: 10px 0;">Unlock unlimited extractions</p>
-        <ul style="font-size: 1em;">
-            <li>✅ Unlimited extractions (no monthly cap)</li>
-            <li>✅ Multi-statement extraction (all 3 at once)</li>
-            <li>✅ Download Excel + JSON files</li>
-            <li>✅ No watermark on results</li>
-            <li>✅ Priority processing</li>
-            <li>✅ Usage analytics dashboard</li>
-        </ul>
+st.markdown(
+    """
+    <style>
+    .contact-button {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        z-index: 1000;
+    }
+    </style>
+    <div class="contact-button">
+        <a href="mailto:data.analytics.product@gmail.com?subject=Interested in Customizing Financial Statement Extractor&body=Hi, I found the Financial Statement Extractor valuable and I'm interested in customizing it for my use case."
+           style="background: #1F4E79; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px; display: inline-block;">
+            📩 Contact for Customization
+        </a>
     </div>
-    """, unsafe_allow_html=True)
-
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        # Stripe Payment Link - REPLACE WITH YOUR ACTUAL LINK
-        stripe_link = "https://buy.stripe.com/cNicN41Us9gW0QYex7cwg00"
-
-        st.markdown(f"""
-        <div style="text-align: center; padding: 20px;">
-            <p style="font-size: 2em; font-weight: bold; margin: 10px 0;">$29<span style="font-size: 0.5em; font-weight: normal;">/month</span></p>
-            <a href="{stripe_link}" target="_blank"
-               style="background: #059669; color: white; padding: 15px 40px;
-                      text-decoration: none; border-radius: 8px; font-weight: bold;
-                      display: inline-block; margin: 10px 0;">
-                🚀 Upgrade to Pro Now
-            </a>
-            <p style="font-size: 0.9em; color: #10b981; font-weight: bold; margin: 10px 0;">
-                📊 Unlimited extractions/month
-            </p>
-            <p style="font-size: 0.8em; color: #666; margin-top: 15px;">
-                Secure checkout powered by Stripe
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        if st.button("Close", use_container_width=True):
-            st.session_state["show_upgrade_modal"] = False
-            st.rerun()
-
-    st.divider()
+    """,
+    unsafe_allow_html=True
+)
 
 # -----------------------------------------------------------------------------
 # Main Content
@@ -310,7 +252,7 @@ with col4:
     st.metric("📄 JSON", st.session_state["json_count"])
 
 # -----------------------------------------------------------------------------
-# Process Button with Freemium Check
+# Process Button
 # -----------------------------------------------------------------------------
 if "uploaded_pdf" in st.session_state:
     st.divider()
@@ -318,45 +260,48 @@ if "uploaded_pdf" in st.session_state:
     if selected_statements:
         st.caption(f"📊 Extracting: {', '.join([statement_options[s] for s in selected_statements])}")
 
-    # Check extraction limit BEFORE processing
-    stats = st.session_state.get("usage_stats", {})
-    tier = stats.get("tier", "free")
-    current = stats.get("extractions_this_month", 0)
-    limit = stats.get("limit", FREE_TIER_LIMIT)
+    process_btn = st.button("🚀 Extract Statements", type="primary", use_container_width=True)
 
-    if tier == "free" and current >= limit:
-        st.error(f"⚠️ Free tier limit reached ({current}/{limit} extractions this month)")
-        st.info("👉 Upgrade to Pro for unlimited extractions")
-        if st.button("⬆️ Upgrade to Pro", type="primary", use_container_width=True):
-            st.session_state["show_upgrade_modal"] = True
+    if process_btn:
+        if not selected_statements:
+            st.warning("Please select at least one statement type to extract.")
+        else:
+            pdf_path = st.session_state["uploaded_pdf"]
+            pdf_name = Path(pdf_path).stem
+
+            st.divider()
+
+            # Log messages
+            log_messages = []
+
+            def add_log(message):
+                log_messages.append(message)
+
+            with st.spinner("⏳ Processing your PDF..."):
+                # Step 1: Analyze PDF
+                add_log("🔍 Analyzing PDF structure...")
+
+                # Step 2: Detect statements
+                add_log("📄 Detecting financial statements...")
+
+                # Step 3: Extract data
+                add_log("🤖 Extracting data using AI...")
+
+                final_state = process_pdf(pdf_path, selected_statements, log_callback=add_log)
+
+                # Step 4: Validate
+                add_log("⚖️ Validating extraction quality...")
+
+                # Step 5: Generate outputs
+                add_log("📥 Generating Excel and JSON files...")
+
+            # Show logs after processing
+            st.expander("📝 View Processing Log", expanded=False).markdown("\n\n".join(log_messages))
+
+            st.session_state["processing_complete"] = True
+            st.session_state["final_state"] = final_state
+            st.session_state["pdf_name"] = pdf_name
             st.rerun()
-    else:
-        process_btn = st.button("🚀 Extract Statements", type="primary", use_container_width=True)
-
-        if process_btn:
-            if not selected_statements:
-                st.warning("Please select at least one statement type to extract.")
-            else:
-                pdf_path = st.session_state["uploaded_pdf"]
-                pdf_name = Path(pdf_path).stem
-
-                st.divider()
-                st.header("⏳ Processing")
-
-                progress_bar = st.progress(0)
-                log_container = st.expander("📝 Processing Log", expanded=True)
-                log_text = log_container.empty()
-
-                try:
-                    final_state = process_pdf(pdf_path, selected_statements)
-                finally:
-                    pass
-
-                progress_bar.progress(100)
-                st.session_state["processing_complete"] = True
-                st.session_state["final_state"] = final_state
-                st.session_state["pdf_name"] = pdf_name
-                st.rerun()
 
 # -----------------------------------------------------------------------------
 # Results Section
@@ -376,23 +321,7 @@ if st.session_state.get("processing_complete"):
             st.error(f"❌ {error_msg}")
 
     elif final_state.get("output_files"):
-        # Check tier for watermark
-        stats = st.session_state.get("usage_stats", {})
-        tier = stats.get("tier", "free")
-        is_pro = tier == "pro"
-
         st.success("✅ Extraction Complete!")
-
-        # Free tier watermark
-        if not is_pro:
-            st.markdown(
-                "<div style='background: #fff3cd; border-left: 4px solid #ffc107; "
-                "padding: 15px; margin: 20px 0; border-radius: 4px;'>"
-                "<strong>⚠️ Free Tier Preview</strong><br>"
-                "Upgrade to Pro to download Excel/JSON files and remove watermark"
-                "</div>",
-                unsafe_allow_html=True
-            )
 
         log_file = final_state.get("log_file")
         if log_file and Path(log_file).exists():
@@ -426,30 +355,24 @@ if st.session_state.get("processing_complete"):
             col1, col2 = st.columns(2)
             with col1:
                 if files["json"] and files["json"].exists():
-                    if is_pro:
-                        with open(files["json"], "rb") as f:
-                            st.download_button(
-                                "📥 JSON",
-                                f.read(),
-                                files["json"].name,
-                                "application/json",
-                                use_container_width=True
-                            )
-                    else:
-                        st.button("📥 JSON", disabled=True, use_container_width=True, help="Pro feature")
+                    with open(files["json"], "rb") as f:
+                        st.download_button(
+                            "📥 JSON",
+                            f.read(),
+                            files["json"].name,
+                            "application/json",
+                            use_container_width=True
+                        )
             with col2:
                 if files["excel"] and files["excel"].exists():
-                    if is_pro:
-                        with open(files["excel"], "rb") as f:
-                            st.download_button(
-                                "📥 Excel",
-                                f.read(),
-                                files["excel"].name,
-                                "application/vnd.ms-excel",
-                                use_container_width=True
-                            )
-                    else:
-                        st.button("📥 Excel", disabled=True, use_container_width=True, help="Pro feature")
+                    with open(files["excel"], "rb") as f:
+                        st.download_button(
+                            "📥 Excel",
+                            f.read(),
+                            files["excel"].name,
+                            "application/vnd.ms-excel",
+                            use_container_width=True
+                        )
 
         st.divider()
         st.header("⚖️ AI Evaluation (Reference)")

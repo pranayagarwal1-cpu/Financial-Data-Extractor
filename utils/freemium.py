@@ -210,10 +210,5 @@ def render_usage_indicator():
 
         # Upgrade CTA
         st.divider()
-        st.markdown(
-            "<div style='text-align: center; margin: 15px 0;'>",
-            unsafe_allow_html=True
-        )
-        if st.button("⬆️ Upgrade to Pro - $29/mo", use_container_width=True, type="primary"):
+        if st.button("📩 Request Pro Access", use_container_width=True, type="primary"):
             st.session_state["show_upgrade_modal"] = True
-        st.markdown("</div>", unsafe_allow_html=True)
