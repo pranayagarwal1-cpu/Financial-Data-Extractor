@@ -96,6 +96,34 @@ st.set_page_config(
 # Sidebar
 # -----------------------------------------------------------------------------
 with st.sidebar:
+    # Contact Button at top of sidebar
+    st.markdown(
+        """
+        <style>
+        .sidebar-contact a {
+            background-color: #001f3f;
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            display: block;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .sidebar-contact a:hover {
+            background-color: #003366;
+        }
+        </style>
+        <div class="sidebar-contact">
+            <a href="mailto:data.analytics.product@gmail.com?subject=Interested in Customizing Financial Statement Extractor&body=Hi, I found the Financial Statement Extractor valuable and I'm interested in customizing it for my use case.">
+                Contact
+            </a>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
     # Upload section
     st.header("📁 Upload PDF")
 
@@ -188,45 +216,22 @@ with st.sidebar:
         st.session_state["show_metrics"] = not st.session_state.get("show_metrics", False)
 
 # -----------------------------------------------------------------------------
-# Contact CTA Button (top right corner)
+# Main Content
 # -----------------------------------------------------------------------------
+st.title("📊 Financial Statement Extractor")
+
+# Value Proposition
 st.markdown(
     """
-    <style>
-    .contact-button {
-        position: fixed;
-        top: 10px;
-        right: 10px;
-        z-index: 1000;
-    }
-    .contact-button a {
-        background: #2563EB;
-        color: white;
-        padding: 10px 24px;
-        text-decoration: none;
-        border-radius: 8px;
-        font-weight: 600;
-        font-size: 15px;
-        display: inline-block;
-        transition: background 0.2s;
-    }
-    .contact-button a:hover {
-        background: #1D4ED8;
-    }
-    </style>
-    <div class="contact-button">
-        <a href="mailto:data.analytics.product@gmail.com?subject=Interested in Customizing Financial Statement Extractor&body=Hi, I found the Financial Statement Extractor valuable and I'm interested in customizing it for my use case.">
-            Contact
-        </a>
+    <div style="font-size: 18px; color: #555; margin-bottom: 30px; line-height: 1.6;">
+    For <strong>financial analysts</strong> and <strong>investment teams</strong>:
+    Extract Balance Sheets, Income Statements & Cash Flow from PDFs in seconds.
+    <strong>Reduce manual data entry by 90%</strong> — from 30+ minutes to under 1 minute per report.
+    Get structured Excel & JSON files ready for your financial models and data warehouse.
     </div>
     """,
     unsafe_allow_html=True
 )
-
-# -----------------------------------------------------------------------------
-# Main Content
-# -----------------------------------------------------------------------------
-st.title("📊 Financial Statement Extractor")
 
 # Initialize session counters
 if "pdfs_uploaded" not in st.session_state:
