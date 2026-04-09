@@ -155,12 +155,23 @@ with st.sidebar:
         StatementType.CASH_FLOW: "Cash Flow Statement"
     }
 
+    # Check if user is free tier - limit to 1 statement at a time
+    stats = st.session_state.get("usage_stats", {})
+    tier = stats.get("tier", "free")
+    is_pro = tier == "pro"
+
     selected_statements = st.multiselect(
         "Select statements:",
         options=list(statement_options.keys()),
         default=[StatementType.BALANCE_SHEET],
-        format_func=lambda x: statement_options[x]
+        format_func=lambda x: statement_options[x],
+        help="Free tier: 1 statement at a time | Pro: Extract all statements simultaneously"
     )
+
+    # Free tier limitation
+    if not is_pro and len(selected_statements) > 1:
+        st.warning("⚠️ Free tier: Select only 1 statement at a time. Upgrade to Pro for multi-statement extraction.")
+        selected_statements = selected_statements[:1]
 
     st.session_state["selected_statements"] = selected_statements
 
@@ -219,9 +230,10 @@ if st.session_state.get("show_upgrade_modal"):
         <p style="font-size: 1.2em; margin: 10px 0;">Unlock unlimited extractions</p>
         <ul style="font-size: 1em;">
             <li>✅ Unlimited extractions (no monthly cap)</li>
+            <li>✅ Multi-statement extraction (all 3 at once)</li>
+            <li>✅ Download Excel + JSON files</li>
+            <li>✅ No watermark on results</li>
             <li>✅ Priority processing</li>
-            <li>✅ All statement types (Balance Sheet, Income Statement, Cash Flow)</li>
-            <li>✅ Excel + JSON downloads</li>
             <li>✅ Usage analytics dashboard</li>
         </ul>
     </div>
@@ -241,6 +253,9 @@ if st.session_state.get("show_upgrade_modal"):
                       display: inline-block; margin: 10px 0;">
                 🚀 Upgrade to Pro Now
             </a>
+            <p style="font-size: 0.9em; color: #10b981; font-weight: bold; margin: 10px 0;">
+                📊 Unlimited extractions/month
+            </p>
             <p style="font-size: 0.8em; color: #666; margin-top: 15px;">
                 Secure checkout powered by Stripe
             </p>
@@ -361,7 +376,23 @@ if st.session_state.get("processing_complete"):
             st.error(f"❌ {error_msg}")
 
     elif final_state.get("output_files"):
+        # Check tier for watermark
+        stats = st.session_state.get("usage_stats", {})
+        tier = stats.get("tier", "free")
+        is_pro = tier == "pro"
+
         st.success("✅ Extraction Complete!")
+
+        # Free tier watermark
+        if not is_pro:
+            st.markdown(
+                "<div style='background: #fff3cd; border-left: 4px solid #ffc107; "
+                "padding: 15px; margin: 20px 0; border-radius: 4px;'>"
+                "<strong>⚠️ Free Tier Preview</strong><br>"
+                "Upgrade to Pro to download Excel/JSON files and remove watermark"
+                "</div>",
+                unsafe_allow_html=True
+            )
 
         log_file = final_state.get("log_file")
         if log_file and Path(log_file).exists():
@@ -395,24 +426,30 @@ if st.session_state.get("processing_complete"):
             col1, col2 = st.columns(2)
             with col1:
                 if files["json"] and files["json"].exists():
-                    with open(files["json"], "rb") as f:
-                        st.download_button(
-                            "📥 JSON",
-                            f.read(),
-                            files["json"].name,
-                            "application/json",
-                            use_container_width=True
-                        )
+                    if is_pro:
+                        with open(files["json"], "rb") as f:
+                            st.download_button(
+                                "📥 JSON",
+                                f.read(),
+                                files["json"].name,
+                                "application/json",
+                                use_container_width=True
+                            )
+                    else:
+                        st.button("📥 JSON", disabled=True, use_container_width=True, help="Pro feature")
             with col2:
                 if files["excel"] and files["excel"].exists():
-                    with open(files["excel"], "rb") as f:
-                        st.download_button(
-                            "📥 Excel",
-                            f.read(),
-                            files["excel"].name,
-                            "application/vnd.ms-excel",
-                            use_container_width=True
-                        )
+                    if is_pro:
+                        with open(files["excel"], "rb") as f:
+                            st.download_button(
+                                "📥 Excel",
+                                f.read(),
+                                files["excel"].name,
+                                "application/vnd.ms-excel",
+                                use_container_width=True
+                            )
+                    else:
+                        st.button("📥 Excel", disabled=True, use_container_width=True, help="Pro feature")
 
         st.divider()
         st.header("⚖️ AI Evaluation (Reference)")

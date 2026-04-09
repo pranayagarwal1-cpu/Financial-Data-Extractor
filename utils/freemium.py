@@ -188,13 +188,25 @@ def render_usage_indicator():
         remaining = max(0, limit - current) if limit != -1 else "∞"
         progress = current / limit if limit > 0 else 0
 
-        st.markdown(f"**Free Tier**: {current}/{limit} extractions used")
+        st.markdown(f"**Free Tier**: {current}/{limit} extractions")
         st.progress(progress)
 
         if remaining == 0:
-            st.error("⚠️ Limit reached! Upgrade to Pro for unlimited.")
+            st.error("⚠️ Limit reached!")
         else:
-            st.caption(f"{remaining} extractions remaining this month")
+            st.caption(f"{remaining} remaining this month")
+
+        # Show free tier limitations
+        st.divider()
+        st.markdown("**Free Tier Limits:**")
+        st.markdown(
+            "<div style='font-size: 0.85em; color: #666;'>",
+            unsafe_allow_html=True
+        )
+        st.markdown("• 1 statement at a time")
+        st.markdown("• No Excel/JSON downloads")
+        st.markdown("• Watermark on results")
+        st.markdown("</div>", unsafe_allow_html=True)
 
         # Upgrade CTA
         st.divider()
