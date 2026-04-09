@@ -230,7 +230,7 @@ if st.session_state.get("show_upgrade_modal"):
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         # Stripe Payment Link - REPLACE WITH YOUR ACTUAL LINK
-        stripe_link = "https://buy.stripe.com/YOUR_PAYMENT_LINK_HERE"
+        stripe_link = "https://buy.stripe.com/cNicN41Us9gW0QYex7cwg00"
 
         st.markdown(f"""
         <div style="text-align: center; padding: 20px;">
