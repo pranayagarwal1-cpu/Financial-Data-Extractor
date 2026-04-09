@@ -226,6 +226,9 @@ class Observability:
             **kwargs
         }
 
+        # Ensure directories exist (in case they were cleaned up)
+        self._ensure_dirs()
+
         # Write to daily log file
         log_file = self.logs_dir / f"{datetime.now().strftime('%Y-%m-%d')}.jsonl"
         with open(log_file, "a") as f:
