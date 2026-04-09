@@ -199,11 +199,24 @@ st.markdown(
         right: 10px;
         z-index: 1000;
     }
+    .contact-button a {
+        background: #2563EB;
+        color: white;
+        padding: 10px 24px;
+        text-decoration: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 15px;
+        display: inline-block;
+        transition: background 0.2s;
+    }
+    .contact-button a:hover {
+        background: #1D4ED8;
+    }
     </style>
     <div class="contact-button">
-        <a href="mailto:data.analytics.product@gmail.com?subject=Interested in Customizing Financial Statement Extractor&body=Hi, I found the Financial Statement Extractor valuable and I'm interested in customizing it for my use case."
-           style="background: #1F4E79; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px; display: inline-block;">
-            📩 Contact for Customization
+        <a href="mailto:data.analytics.product@gmail.com?subject=Interested in Customizing Financial Statement Extractor&body=Hi, I found the Financial Statement Extractor valuable and I'm interested in customizing it for my use case.">
+            Contact
         </a>
     </div>
     """,
