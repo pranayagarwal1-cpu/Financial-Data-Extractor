@@ -66,6 +66,76 @@ def extract_all_page_texts(pdf_path: str) -> List[dict]:
     return pages_data
 
 
+def _detect_statements_vlm_fallback(
+    pdf_path: str,
+    statement_types: List[StatementType],
+    model: str,
+    run_id: Optional[str] = None
+) -> Dict[StatementType, List[int]]:
+    """
+    VLM-based fallback for scanned PDFs without text layers.
+
+    Rasterizes each page and uses vision model to detect financial statements.
+
+    Args:
+        pdf_path: Path to the PDF file
+        statement_types: List of statement types to detect
+        model: Ollama model to use
+        run_id: Optional run ID for observability tracking
+
+    Returns:
+        Dict mapping StatementType to list of page numbers
+    """
+    from config import Config
+    from utils.pdf_utils import rasterize_page
+    from utils.vlm_utils import vlm_is_statement_page
+    import tempfile
+    import os
+
+    result = {st: [] for st in statement_types}
+
+    # Get total page count
+    with pdfplumber.open(pdf_path) as pdf:
+        total_pages = len(pdf.pages)
+
+    print(f"🔍 Analyzing {total_pages} pages using vision model...")
+
+    # Create temp directory for page images
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        for page_num in range(1, total_pages + 1):
+            print(f"  Processing page {page_num}/{total_pages}...")
+
+            # Rasterize page
+            image_prefix = os.path.join(tmp_dir, f"page_{page_num}")
+            try:
+                image_path = rasterize_page(pdf_path, page_num, image_prefix)
+            except Exception as e:
+                print(f"  ⚠️  Failed to rasterize page {page_num}: {e}")
+                continue
+
+            # Check each statement type
+            for st in statement_types:
+                is_match = vlm_is_statement_page(image_path, st, model, run_id)
+                if is_match:
+                    result[st].append(page_num)
+                    print(f"    ✅ Found {st.value} on page {page_num}")
+
+            # Clean up image
+            try:
+                os.remove(image_path)
+            except:
+                pass
+
+    # Summary
+    for st, pages in result.items():
+        if pages:
+            print(f"✅ {st.value}: pages {pages}")
+        else:
+            print(f"❌ {st.value}: not found")
+
+    return result
+
+
 def find_statement_pages_llm(
     pdf_path: str,
     statement_types: List[StatementType] = None,
@@ -98,6 +168,14 @@ def find_statement_pages_llm(
     print("📄 Extracting text from PDF…")
     pages_data = extract_all_page_texts(pdf_path)
     total_pages = len(pages_data)
+
+    # Check if text extraction was successful (hybrid detection fallback)
+    total_text_length = sum(len(p["text"]) for p in pages_data)
+    has_text_layer = total_text_length > 100  # At least 100 chars across all pages
+
+    if not has_text_layer:
+        print("⚠️  No text layer detected (scanned PDF). Falling back to VLM-based image analysis…")
+        return _detect_statements_vlm_fallback(pdf_path, statement_types, model, run_id)
 
     # Build page summaries
     page_summaries = []
