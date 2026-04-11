@@ -433,17 +433,18 @@ if st.session_state.get("processing_complete"):
 
                                         # Show all pages dropdown, with indicator for statement pages
                                         all_page_options = []
+                                        statement_page_nums = [p + 1 for p in pages_for_type]  # Convert to 1-indexed
+
                                         for p in range(1, total_pages + 1):
-                                            page_idx = p - 1
-                                            if page_idx in pages_for_type:
+                                            if p in statement_page_nums:
                                                 all_page_options.append(f"Page {p} ✓")
                                             else:
                                                 all_page_options.append(f"Page {p}")
 
                                         # Default to first statement page if exists
                                         default_idx = 0
-                                        if pages_for_type:
-                                            default_idx = pages_for_type[0]
+                                        if statement_page_nums:
+                                            default_idx = statement_page_nums[0] - 1  # Convert to 0-indexed for dropdown
 
                                         selected = st.selectbox(
                                             "Jump to page:",
@@ -463,7 +464,8 @@ if st.session_state.get("processing_complete"):
 
                                         # Show statement pages indicator
                                         if pages_for_type:
-                                            st.caption(f"✓ Statement pages: {', '.join(str(p+1) for p in pages_for_type)}")
+                                            st.caption(f"✓ Statement detected on page(s): {', '.join(str(p) for p in statement_page_nums)}")
+                                            st.caption(f"Total PDF pages: {total_pages}")
 
                                         st.download_button(
                                             "📥 Download Full PDF",
