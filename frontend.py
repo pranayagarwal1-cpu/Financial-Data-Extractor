@@ -425,28 +425,37 @@ if st.session_state.get("processing_complete"):
                                         pages_for_type = statement_pages.get(stmt_type, [])
 
                                         if pages_for_type:
-                                            st.caption(f"Found on page(s): {', '.join(str(p+1) for p in pages_for_type)}")
+                                            # Page navigator
+                                            page_options = [str(p + 1) for p in pages_for_type]
+                                            selected_page_label = st.selectbox(
+                                                "Jump to page:",
+                                                options=page_options,
+                                                key=f"page_select_{pdf_name}_{stmt_type.value}"
+                                            )
+                                            page_num = int(selected_page_label)
+                                            page_idx = page_num - 1  # Convert to 0-indexed
 
-                                            # Show first page as image preview
+                                            # Render selected page
                                             from utils.pdf_utils import rasterize_page_to_png
-                                            import base64
 
-                                            page_num = pages_for_type[0] + 1  # Convert to 1-indexed
                                             png_bytes = rasterize_page_to_png(pdf_path, page_num, dpi=150)
 
                                             if png_bytes:
-                                                st.image(png_bytes, caption=f"Page {page_num} (click to verify)", use_container_width=True)
+                                                st.image(png_bytes, caption=f"Page {page_num}", use_container_width=True)
 
-                                                # If multiple pages, show thumbnails
-                                                if len(pages_for_type) > 1:
-                                                    cols = st.columns(len(pages_for_type))
-                                                    for idx, col in enumerate(cols[1:], 1):
-                                                        if idx < len(pages_for_type):
-                                                            with col:
-                                                                p_num = pages_for_type[idx] + 1
-                                                                png = rasterize_page_to_png(pdf_path, p_num, dpi=100)
-                                                                if png:
-                                                                    st.image(png, caption=f"Page {p_num}", use_container_width=True)
+                                            # Show all statement page thumbnails below
+                                            if len(pages_for_type) > 1:
+                                                st.caption("All statement pages:")
+                                                thumb_cols = st.columns(len(pages_for_type))
+                                                for idx, tcol in enumerate(thumb_cols):
+                                                    with tcol:
+                                                        p_num = pages_for_type[idx] + 1
+                                                        if p_num == page_num:
+                                                            st.markdown(f"**→ Page {p_num}**")
+                                                        else:
+                                                            png = rasterize_page_to_png(pdf_path, p_num, dpi=100)
+                                                            if png:
+                                                                st.image(png, caption=f"Page {p_num}", use_container_width=True)
 
                                         st.download_button(
                                             "📥 Download Full PDF",
