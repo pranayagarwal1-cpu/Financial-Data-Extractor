@@ -377,21 +377,94 @@ if st.session_state.get("processing_complete"):
                 if final_state.get("output_files"):
                     st.success("✅ Extraction Complete!")
 
+                    # Side-by-side view: PDF + Extracted Data
+                    st.markdown("##### 🔍 Review Extraction")
+
+                    # Get extracted data from JSON files
                     output_files = final_state["output_files"]
-
-                    st.markdown("##### 📥 Download Files")
-
                     statement_files = {}
                     for f in output_files:
                         f_path = Path(f)
                         for st_type in StatementType:
                             if st_type.value in f_path.name:
                                 if st_type not in statement_files:
-                                    statement_files[st_type] = {"json": None, "excel": None}
+                                    statement_files[st_type] = {"json": None, "excel": None, "pdf_page": None}
                                 if f_path.suffix == ".json":
                                     statement_files[st_type]["json"] = f_path
                                 elif f_path.suffix == ".xlsx":
                                     statement_files[st_type]["excel"] = f_path
+
+                    # Create tabs for each statement type
+                    statement_tabs = {
+                        StatementType.BALANCE_SHEET: "Balance Sheet",
+                        StatementType.INCOME_STATEMENT: "Income Statement",
+                        StatementType.CASH_FLOW: "Cash Flow"
+                    }
+
+                    tab_keys = [k for k in statement_tabs.keys() if k in statement_files and statement_files[k]["json"]]
+                    if tab_keys:
+                        tabs = st.tabs([statement_tabs[k] for k in tab_keys])
+
+                        for tab, stmt_type in zip(tabs, tab_keys):
+                            with tab:
+                                json_file = statement_files[stmt_type]["json"]
+                                if json_file and json_file.exists():
+                                    # Load extracted data
+                                    import json
+                                    with open(json_file, "r") as f:
+                                        extracted_data = json.load(f)
+
+                                    # Side-by-side view
+                                    col1, col2 = st.columns([1, 1])
+
+                                    with col1:
+                                        st.markdown("**📄 Original PDF**")
+                                        # Show PDF using iframe or image
+                                        st.info("View the original PDF to verify extraction")
+                                        st.download_button(
+                                            "📥 Download Original PDF",
+                                            Path(pdf_path).read_bytes(),
+                                            Path(pdf_path).name,
+                                            "application/pdf",
+                                            key=f"view_pdf_{pdf_name}_{stmt_type.value}"
+                                        )
+
+                                    with col2:
+                                        st.markdown("**📊 Extracted Data**")
+                                        st.caption(f"Click values to edit")
+
+                                        # Display extracted data as editable table
+                                        if extracted_data.get("sections"):
+                                            for section in extracted_data["sections"]:
+                                                section_name = section.get("name", "")
+                                                if section_name:
+                                                    st.markdown(f"**{section_name}**")
+
+                                                rows = section.get("rows", [])
+                                                if rows:
+                                                    # Build table data
+                                                    table_data = []
+                                                    for idx, row in enumerate(rows):
+                                                        label = row.get("label", "")
+                                                        values = row.get("values", [])
+                                                        is_subtotal = row.get("is_subtotal", False)
+
+                                                        row_data = {"Line Item": label}
+                                                        # Add period columns
+                                                        periods = extracted_data.get("periods", ["Period 1", "Period 2"])
+                                                        for i, period in enumerate(periods):
+                                                            val = values[i] if i < len(values) else ""
+                                                            row_data[period] = val
+
+                                                        table_data.append(row_data)
+
+                                                    if table_data:
+                                                        df = pd.DataFrame(table_data)
+                                                        st.dataframe(df, use_container_width=True, hide_index=True)
+
+                                    st.divider()
+
+                    st.markdown("##### 📥 Download Files")
 
                     for st_type, files in statement_files.items():
                         st.markdown(f"**{statement_options[st_type]}**")
