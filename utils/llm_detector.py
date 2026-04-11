@@ -238,6 +238,7 @@ RESPONSE FORMAT (JSON object only, no explanation):
 
     # Parse response
     content = response["message"]["content"].strip()
+    print(f"📝 Raw LLM response:\n{content[:500]}...")
 
     # Clean up markdown fences
     if content.startswith("```"):
@@ -251,20 +252,24 @@ RESPONSE FORMAT (JSON object only, no explanation):
     if json_match:
         try:
             result = json.loads(json_match.group())
+            print(f"📋 Parsed JSON result: {result}")
             if isinstance(result, dict):
                 # Convert string keys to StatementType and validate page numbers
                 output = {}
                 for st in statement_types:
                     key = st.value
                     pages = result.get(key, [])
+                    print(f"  {key}: raw={pages}")
                     if isinstance(pages, list):
                         valid_pages = [
                             p for p in pages
                             if isinstance(p, int) and 1 <= p <= total_pages
                         ]
                         output[st] = valid_pages
+                        print(f"  {key}: validated={valid_pages}")
                     else:
                         output[st] = []
+                print(f"✅ Final page mapping: {output}")
                 return output
         except Exception as e:
             print(f"⚠️  Error parsing JSON: {e}")
