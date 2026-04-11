@@ -433,7 +433,8 @@ if st.session_state.get("processing_complete"):
 
                                         # Show all pages dropdown, with indicator for statement pages
                                         all_page_options = []
-                                        statement_page_nums = [p + 1 for p in pages_for_type]  # Convert to 1-indexed
+                                        # pages_for_type is already 1-indexed from the LLM detector
+                                        statement_page_nums = pages_for_type  # Already 1-indexed
 
                                         for p in range(1, total_pages + 1):
                                             if p in statement_page_nums:
