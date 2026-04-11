@@ -419,14 +419,42 @@ if st.session_state.get("processing_complete"):
 
                                     with col1:
                                         st.markdown("**📄 Original PDF**")
-                                        # Show PDF using iframe or image
-                                        st.info("View the original PDF to verify extraction")
+
+                                        # Get statement pages for this type
+                                        statement_pages = final_state.get("statement_pages", {})
+                                        pages_for_type = statement_pages.get(stmt_type, [])
+
+                                        if pages_for_type:
+                                            st.caption(f"Found on page(s): {', '.join(str(p+1) for p in pages_for_type)}")
+
+                                            # Show first page as image preview
+                                            from utils.pdf_utils import rasterize_page_to_png
+                                            import base64
+
+                                            page_num = pages_for_type[0] + 1  # Convert to 1-indexed
+                                            png_bytes = rasterize_page_to_png(pdf_path, page_num, dpi=150)
+
+                                            if png_bytes:
+                                                st.image(png_bytes, caption=f"Page {page_num} (click to verify)", use_container_width=True)
+
+                                                # If multiple pages, show thumbnails
+                                                if len(pages_for_type) > 1:
+                                                    cols = st.columns(len(pages_for_type))
+                                                    for idx, col in enumerate(cols[1:], 1):
+                                                        if idx < len(pages_for_type):
+                                                            with col:
+                                                                p_num = pages_for_type[idx] + 1
+                                                                png = rasterize_page_to_png(pdf_path, p_num, dpi=100)
+                                                                if png:
+                                                                    st.image(png, caption=f"Page {p_num}", use_container_width=True)
+
                                         st.download_button(
-                                            "📥 Download Original PDF",
+                                            "📥 Download Full PDF",
                                             Path(pdf_path).read_bytes(),
                                             Path(pdf_path).name,
                                             "application/pdf",
-                                            key=f"view_pdf_{pdf_name}_{stmt_type.value}"
+                                            key=f"view_pdf_{pdf_name}_{stmt_type.value}",
+                                            use_container_width=True
                                         )
 
                                     with col2:
