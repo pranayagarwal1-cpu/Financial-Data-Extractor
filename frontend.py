@@ -567,6 +567,14 @@ if st.session_state.get("processing_complete"):
                                     ])
                                     st.dataframe(score_df, use_container_width=True, hide_index=True)
 
+                                    # Show feedback/reason for score
+                                    feedback = eval_data.get("feedback", "")
+                                    if feedback:
+                                        if not passed or avg_score < 7:
+                                            st.warning(f"⚠️ {feedback}")
+                                        else:
+                                            st.info(f"✅ {feedback}")
+
                     # Original PDF download
                     st.markdown("##### 📥 Original Document")
                     if pdf_path and Path(pdf_path).exists():
