@@ -10,8 +10,10 @@ Supports:
 import re
 import json
 import time
+import logging
 import ollama
 from enum import Enum
+from typing import Dict
 
 
 class StatementType(Enum):
