@@ -148,9 +148,78 @@ def strip_vlm_response(raw: str) -> str:
     return raw.strip()
 
 
+def vlm_detect_all_statements(image_path: str, model: str, run_id: str = None) -> Dict[StatementType, bool]:
+    """
+    Ask the VLM which financial statements are on this page in a single call.
+
+    Args:
+        image_path: Path to the rasterized page image
+        model: Ollama model name to use
+        run_id: Optional run ID for observability tracking
+
+    Returns:
+        Dict mapping StatementType to bool (True if present)
+    """
+    from utils.observability import get_observability
+    obs = get_observability()
+    start_time = time.time()
+
+    prompt = """Look at this financial document page. Which of the following statements are present?
+- Balance Sheet (Statement of Financial Position, Assets, Liabilities, Equity)
+- Income Statement (Statement of Earnings, Profit & Loss, Revenue, Expenses, Net Income)
+- Cash Flow Statement (Operating Activities, Investing Activities, Financing Activities)
+
+Reply with ONLY valid JSON in this exact format:
+{
+  "balance_sheet": true,
+  "income_statement": true,
+  "cash_flow": false
+}"""
+
+    response = ollama.chat(
+        model=model,
+        messages=[{
+            "role": "user",
+            "content": prompt,
+            "images": [image_path],
+        }]
+    )
+
+    duration_ms = (time.time() - start_time) * 1000
+    obs.log_llm_call(
+        model=model,
+        duration_ms=duration_ms,
+        prompt=prompt,
+        response=response["message"]["content"],
+        run_id=run_id
+    )
+
+    # Parse response
+    result = {st: False for st in StatementType}
+    content = response["message"]["content"].strip()
+
+    # Clean up markdown fences
+    if content.startswith("```"):
+        content = content.split("```")[1]
+        if content.startswith("json"):
+            content = content[4:]
+        content = content.rstrip("`").strip()
+
+    try:
+        import json as json_lib
+        parsed = json_lib.loads(content)
+        for st in StatementType:
+            result[st] = bool(parsed.get(st.value, False))
+    except Exception as e:
+        logging.warning(f"Failed to parse detection response: {e}")
+
+    return result
+
+
 def vlm_is_statement_page(image_path: str, statement_type: StatementType, model: str, run_id: str = None) -> bool:
     """
     Ask the VLM whether this page contains a specific financial statement.
+    Deprecated: Use vlm_detect_all_statements() for 3x speedup.
 
     Args:
         image_path: Path to the rasterized page image

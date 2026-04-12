@@ -98,7 +98,7 @@ def _detect_statements_vlm_fallback(
     with pdfplumber.open(pdf_path) as pdf:
         total_pages = len(pdf.pages)
 
-    print(f"🔍 Analyzing {total_pages} pages using vision model...")
+    print(f"🔍 Analyzing {total_pages} pages using vision model (batched detection)...")
 
     # Create temp directory for page images
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -113,12 +113,17 @@ def _detect_statements_vlm_fallback(
                 print(f"  ⚠️  Failed to rasterize page {page_num}: {e}")
                 continue
 
-            # Check each statement type
-            for st in statement_types:
-                is_match = vlm_is_statement_page(image_path, st, model, run_id)
-                if is_match:
-                    result[st].append(page_num)
-                    print(f"    ✅ Found {st.value} on page {page_num}")
+            # Batch detect all statement types in ONE VLM call (3x speedup)
+            try:
+                from utils.vlm_utils import vlm_detect_all_statements
+                detection_result = vlm_detect_all_statements(image_path, model, run_id)
+
+                for st in statement_types:
+                    if detection_result.get(st, False):
+                        result[st].append(page_num)
+                        print(f"    ✅ Found {st.value} on page {page_num}")
+            except Exception as e:
+                print(f"  ⚠️  Detection error for page {page_num}: {e}")
 
             # Clean up image
             try:

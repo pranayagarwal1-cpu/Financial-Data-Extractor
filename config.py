@@ -17,7 +17,7 @@ class Config:
 
     # DPI settings
     SCAN_DPI = 100       # Low DPI for VLM verification
-    EXTRACT_DPI = 200    # Higher DPI for accurate data extraction
+    EXTRACT_DPI = 150    # Balanced DPI for speed + accuracy
 
     # Detection settings
     USE_VLM_VERIFICATION = os.getenv("USE_VLM_VERIFICATION", "false").lower() == "true"
