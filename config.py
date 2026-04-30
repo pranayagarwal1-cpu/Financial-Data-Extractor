@@ -22,8 +22,12 @@ class Config:
     # Detection settings
     USE_VLM_VERIFICATION = os.getenv("USE_VLM_VERIFICATION", "false").lower() == "true"
 
+    # Model for categorization evaluation (LLM-as-Judge)
+    CAT_EVALUATION_MODEL = os.getenv("CAT_EVALUATION_MODEL", "qwen3.5:397b-cloud")
+
     # Retry settings
     MAX_RETRIES = 2      # Maximum re-extraction attempts
+    MAX_CAT_RETRIES = 2  # Allows 1 retry after initial attempt
 
     # Output settings
     OUTPUT_FORMATS = ["json", "excel"]  # Supported output formats

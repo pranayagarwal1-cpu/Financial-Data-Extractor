@@ -12,7 +12,12 @@ class AgentState(TypedDict, total=False):
         statement_pages: Dict mapping StatementType to list of page numbers
         extracted_data: Dict mapping StatementType to extracted data
         evaluation_result: Dict mapping StatementType to evaluation results
+        categorized_data: Dict mapping StatementType to categorized data (with CoA mappings)
+        categorization_summary: Summary statistics for categorization
+        review_queue: List of line items needing human review
         retry_count: Number of extraction attempts
+        cat_retry_count: Number of categorization attempts
+        cat_evaluation_result: Categorization evaluation scores per statement type
         output_files: List of output file paths
         error_message: Error message if any step fails
         log_file: Path to the log file for this run
@@ -23,7 +28,12 @@ class AgentState(TypedDict, total=False):
     statement_pages: Dict[StatementType, List[int]]
     extracted_data: Dict[StatementType, dict]
     evaluation_result: Dict[StatementType, dict]
+    categorized_data: Dict[StatementType, dict]
+    categorization_summary: Dict[str, Any]
+    review_queue: List[Dict[str, Any]]
     retry_count: int
+    cat_retry_count: int
+    cat_evaluation_result: Dict[str, Any]
     output_files: List[str]
     error_message: Optional[str]
     log_file: Optional[str]

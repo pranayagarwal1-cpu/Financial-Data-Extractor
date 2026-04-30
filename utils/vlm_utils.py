@@ -11,7 +11,7 @@ import re
 import json
 import time
 import logging
-import ollama
+from utils.ollama_client import chat
 from enum import Enum
 from typing import Dict
 
@@ -178,7 +178,7 @@ Reply with ONLY valid JSON in this exact format:
   "cash_flow": false
 }"""
 
-    response = ollama.chat(
+    response = chat(
         model=model,
         messages=[{
             "role": "user",
@@ -236,7 +236,7 @@ def vlm_is_statement_page(image_path: str, statement_type: StatementType, model:
     obs = get_observability()
     start_time = time.time()
 
-    response = ollama.chat(
+    response = chat(
         model=model,
         messages=[{
             "role": "user",
@@ -275,7 +275,7 @@ def vlm_extract_statement(image_path: str, statement_type: StatementType, model:
     obs = get_observability()
     start_time = time.time()
 
-    response = ollama.chat(
+    response = chat(
         model=model,
         messages=[{
             "role": "user",

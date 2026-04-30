@@ -6,7 +6,7 @@ which pages contain each type of financial statement. This handles international
 documents with varying terminology.
 """
 
-import ollama
+from utils.ollama_client import chat
 import pdfplumber
 import json
 import re
@@ -224,7 +224,7 @@ RESPONSE FORMAT (JSON object only, no explanation):
     print(f"🤖 Asking LLM to identify financial statement pages (model: {model})…")
 
     start_time = time.time()
-    response = ollama.chat(
+    response = chat(
         model=model,
         messages=[{
             "role": "user",

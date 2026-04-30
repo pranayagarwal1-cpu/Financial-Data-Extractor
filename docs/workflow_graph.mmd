@@ -1,0 +1,17 @@
+stateDiagram-v2
+    [*] --> orchestrator : START
+
+    orchestrator --> extractor : pages found
+    orchestrator --> save_outputs : no pages / error
+
+    extractor --> evaluator
+
+    evaluator --> extractor : retry
+    evaluator --> categorizer : pass
+
+    categorizer --> cat_evaluator
+
+    cat_evaluator --> categorizer : retry
+    cat_evaluator --> save_outputs : pass
+
+    save_outputs --> [*] : END

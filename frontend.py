@@ -587,6 +587,92 @@ if st.session_state.get("processing_complete"):
                             use_container_width=True
                         )
 
+                    # -------------------------------------------------------------------------
+                    # Review & Correct (needs_review / low-confidence rows only)
+                    # -------------------------------------------------------------------------
+                    st.markdown("##### 📝 Review & Correct")
+                    st.caption("Confirm or correct low-confidence / flagged CoA mappings")
+
+                    # Load categorized data from JSON
+                    cat_json = statement_files.get(StatementType.INCOME_STATEMENT, {}).get("json")
+                    if cat_json and cat_json.exists():
+                        with open(cat_json, "r") as f:
+                            cat_data = json.load(f)
+
+                        review_items = []
+                        for section in cat_data.get("sections", []):
+                            section_name = section.get("name", "")
+                            for row in section.get("rows", []):
+                                cat = row.get("categorization", {})
+                                if not cat:
+                                    continue
+                                is_review = cat.get("needs_review", False)
+                                is_low = cat.get("confidence") in ("low", "unmatched")
+                                if is_review or is_low:
+                                    review_items.append({
+                                        "label": row.get("label", ""),
+                                        "section": section_name,
+                                        "current_code": cat.get("coa_code", ""),
+                                        "current_name": cat.get("coa_name", ""),
+                                        "confidence": cat.get("confidence", ""),
+                                        "reasoning": cat.get("reasoning", ""),
+                                    })
+
+                        if review_items:
+                            st.info(f"{len(review_items)} item(s) flagged for review")
+
+                            # Build CoA dropdown options
+                            from coa.chart_of_accounts import COA_ACCOUNTS
+                            coa_options = {}
+                            for code, acc in COA_ACCOUNTS.items():
+                                coa_options[code] = f"{code} - {acc.name}"
+
+                            review_df = pd.DataFrame(review_items)
+                            review_df["corrected_code"] = review_df["current_code"]
+
+                            edited_df = st.data_editor(
+                                review_df,
+                                column_config={
+                                    "corrected_code": st.column_config.SelectboxColumn(
+                                        "Corrected Code",
+                                        options=list(coa_options.keys()),
+                                        format_func=lambda x: coa_options.get(x, x)
+                                    ),
+                                    "label": st.column_config.TextColumn("Line Item", disabled=True),
+                                    "section": st.column_config.TextColumn("Section", disabled=True),
+                                    "current_code": st.column_config.TextColumn("Current Code", disabled=True),
+                                    "current_name": st.column_config.TextColumn("Current Name", disabled=True),
+                                    "confidence": st.column_config.TextColumn("Confidence", disabled=True),
+                                    "reasoning": st.column_config.TextColumn("Reasoning", disabled=True),
+                                },
+                                use_container_width=True,
+                                hide_index=True,
+                                key=f"review_editor_{pdf_name}"
+                            )
+
+                            if st.button("💾 Save Corrections", key=f"save_corr_{pdf_name}", type="primary"):
+                                corrections = []
+                                for _, row in edited_df.iterrows():
+                                    if str(row["corrected_code"]) != str(row["current_code"]):
+                                        from coa.chart_of_accounts import get_account_by_code
+                                        acc = get_account_by_code(str(row["corrected_code"]))
+                                        corrections.append({
+                                            "label": row["label"],
+                                            "section": row["section"],
+                                            "wrong_code": str(row["current_code"]),
+                                            "correct_code": str(row["corrected_code"]),
+                                            "correct_name": acc.name if acc else "",
+                                        })
+
+                                if corrections:
+                                    from utils.memory_manager import append_corrections
+                                    saved = append_corrections(pdf_name, corrections)
+                                    st.success(f"✅ {saved} new correction(s) saved to memory/{pdf_name}.md")
+                                else:
+                                    st.info("No changes to save.")
+                        else:
+                            st.success("✅ No items flagged for review — all mappings look good!")
+
 # -----------------------------------------------------------------------------
 # Metrics Dashboard
 # -----------------------------------------------------------------------------

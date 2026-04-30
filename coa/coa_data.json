@@ -1,0 +1,982 @@
+[
+  {
+    "code": "1010",
+    "name": "Petty Cash",
+    "description": ""
+  },
+  {
+    "code": "1020",
+    "name": "Cash in Daily Drawer",
+    "description": ""
+  },
+  {
+    "code": "1030",
+    "name": "Undeposited Funds",
+    "description": ""
+  },
+  {
+    "code": "1050",
+    "name": "Primary Checking Account",
+    "description": ""
+  },
+  {
+    "code": "1060",
+    "name": "Secondary Checking Account",
+    "description": ""
+  },
+  {
+    "code": "1150",
+    "name": "Savings Account",
+    "description": ""
+  },
+  {
+    "code": "1200",
+    "name": "Certificates of Deposit",
+    "description": ""
+  },
+  {
+    "code": "1250",
+    "name": "Money Market Account",
+    "description": ""
+  },
+  {
+    "code": "1300",
+    "name": "Accounts Receivable",
+    "description": ""
+  },
+  {
+    "code": "1301",
+    "name": "Accounts Receivable - Wellness/Pre-Paid Plans",
+    "description": ""
+  },
+  {
+    "code": "1305",
+    "name": "Allowance for Uncollectable Accounts",
+    "description": ""
+  },
+  {
+    "code": "1350",
+    "name": "Drugs and Medical Supply Inventory",
+    "description": ""
+  },
+  {
+    "code": "1400",
+    "name": "Employee Advances",
+    "description": ""
+  },
+  {
+    "code": "1450",
+    "name": "Advances \u2013 Related Party",
+    "description": ""
+  },
+  {
+    "code": "1500",
+    "name": "Note Receivable \u2013 Related Party",
+    "description": ""
+  },
+  {
+    "code": "1590",
+    "name": "Note Receivable \u2013 Other",
+    "description": ""
+  },
+  {
+    "code": "1600",
+    "name": "Prepaid Expenses",
+    "description": ""
+  },
+  {
+    "code": "1800",
+    "name": "Deposits for New Equipment",
+    "description": ""
+  },
+  {
+    "code": "1850",
+    "name": "Construction In Progress",
+    "description": ""
+  },
+  {
+    "code": "2000",
+    "name": "Professional Medical Equipment",
+    "description": ""
+  },
+  {
+    "code": "2050",
+    "name": "Computer Hardware",
+    "description": ""
+  },
+  {
+    "code": "2100",
+    "name": "Office Equipment, Furniture & Fixtures",
+    "description": ""
+  },
+  {
+    "code": "2150",
+    "name": "Practice Vehicles",
+    "description": ""
+  },
+  {
+    "code": "2200",
+    "name": "Leasehold/Building Improvements",
+    "description": ""
+  },
+  {
+    "code": "2300",
+    "name": "Buildings",
+    "description": ""
+  },
+  {
+    "code": "2350",
+    "name": "Land Improvements",
+    "description": ""
+  },
+  {
+    "code": "2400",
+    "name": "Land",
+    "description": ""
+  },
+  {
+    "code": "2450",
+    "name": "Accumulated Depreciation",
+    "description": ""
+  },
+  {
+    "code": "2500",
+    "name": "Computer Software",
+    "description": ""
+  },
+  {
+    "code": "2520",
+    "name": "Goodwill",
+    "description": ""
+  },
+  {
+    "code": "2560",
+    "name": "Covenant Not to Compete",
+    "description": ""
+  },
+  {
+    "code": "2580",
+    "name": "Organizational & Startup Costs",
+    "description": ""
+  },
+  {
+    "code": "2585",
+    "name": "Loan Costs",
+    "description": ""
+  },
+  {
+    "code": "2599",
+    "name": "Accumulated Amortization",
+    "description": ""
+  },
+  {
+    "code": "2600",
+    "name": "Note Receivable Long Term Portion",
+    "description": ""
+  },
+  {
+    "code": "2700",
+    "name": "Refundable Deposits",
+    "description": ""
+  },
+  {
+    "code": "2850",
+    "name": "Other Assets",
+    "description": ""
+  },
+  {
+    "code": "3000",
+    "name": "Accounts Payable",
+    "description": ""
+  },
+  {
+    "code": "3010",
+    "name": "Credit Cards Payable",
+    "description": ""
+  },
+  {
+    "code": "3015",
+    "name": "Payable to VCP - Wellness Plan Pass-Through",
+    "description": ""
+  },
+  {
+    "code": "3020",
+    "name": "Line of Credit",
+    "description": ""
+  },
+  {
+    "code": "3030",
+    "name": "Current Portion of Long Term Loans & Capital Leases Payable",
+    "description": ""
+  },
+  {
+    "code": "3050",
+    "name": "Loan Payable \u2013 Related Party",
+    "description": ""
+  },
+  {
+    "code": "3055",
+    "name": "Unearned Revenue",
+    "description": ""
+  },
+  {
+    "code": "3060",
+    "name": "Deferred Liability - WellnessPre-Paid Plans",
+    "description": ""
+  },
+  {
+    "code": "3110",
+    "name": "Payroll Tax Payable",
+    "description": ""
+  },
+  {
+    "code": "3140",
+    "name": "Workers Compensation Payable",
+    "description": ""
+  },
+  {
+    "code": "3150",
+    "name": "Accrued Payroll and Bonuses",
+    "description": ""
+  },
+  {
+    "code": "3160",
+    "name": "Accrued Payroll Taxes",
+    "description": ""
+  },
+  {
+    "code": "3170",
+    "name": "Employer Retirement Plan Contribution Payable",
+    "description": ""
+  },
+  {
+    "code": "3200",
+    "name": "Employee Payroll Tax Withholding Payable",
+    "description": ""
+  },
+  {
+    "code": "3260",
+    "name": "Employee Withholding Payable",
+    "description": ""
+  },
+  {
+    "code": "3400",
+    "name": "Sales & Use Tax Payable",
+    "description": ""
+  },
+  {
+    "code": "3420",
+    "name": "Accrued Property Tax",
+    "description": ""
+  },
+  {
+    "code": "3500",
+    "name": "Corporate Income Tax Payable",
+    "description": ""
+  },
+  {
+    "code": "3800",
+    "name": "Long Term Portion of Loans & Capital Lease Payable",
+    "description": ""
+  },
+  {
+    "code": "4000",
+    "name": "Common Stock",
+    "description": ""
+  },
+  {
+    "code": "4010",
+    "name": "Partner's Capital - Partner Two",
+    "description": ""
+  },
+  {
+    "code": "4100",
+    "name": "Additional Paid In Capital",
+    "description": ""
+  },
+  {
+    "code": "4200",
+    "name": "Retained Earnings /(Deficit)",
+    "description": ""
+  },
+  {
+    "code": "4300",
+    "name": "Distributions/Dividends/Draws",
+    "description": ""
+  },
+  {
+    "code": "4400",
+    "name": "Treasury Stock",
+    "description": ""
+  },
+  {
+    "code": "5000",
+    "name": "Professional Services Revenue",
+    "description": "Professional services including exams, consultations, hospitalization, treatment, fluid therapy, diagnostic services, rehabilitation, laser therapy, mortuary, behavior, alternative medicine, specialist services, medical waste disposal"
+  },
+  {
+    "code": "5001",
+    "name": "Vaccine Revenue",
+    "description": "Companion animal vaccine service income, rabies tags and licensing fees"
+  },
+  {
+    "code": "5010",
+    "name": "Exam Revenue",
+    "description": "Outpatient exams, consultations, nail/wing/teeth trims, anal gland expression, microchip implantation, health certificates, house calls, euthanasia services"
+  },
+  {
+    "code": "5020",
+    "name": "Hospitalization & Treatment Revenue",
+    "description": "Inpatient services, critical/nursing care, oxygen, IV fluids, wound care, theriogenology, semen collection, obstetrical assistance"
+  },
+  {
+    "code": "5025",
+    "name": "Fluid Therapy Revenue",
+    "description": "SC/IV fluid administration, crystalloids, colloids, blood/plasma products"
+  },
+  {
+    "code": "5030",
+    "name": "Diagnostic Services Revenue",
+    "description": "Blood pressure, EKG/ECG, Holter monitor, ophthalmology tests, bone marrow aspiration, CSF tap, necropsy, allergy testing"
+  },
+  {
+    "code": "5040",
+    "name": "Rehabilitation Revenue",
+    "description": "Treadmill, swimming, core muscle conditioning, massage, physiotherapeutic applications"
+  },
+  {
+    "code": "5045",
+    "name": "Laser Therapy Revenue",
+    "description": "Therapeutic laser for wound healing, musculoskeletal disease, pain management"
+  },
+  {
+    "code": "5050",
+    "name": "Mortuary Revenue",
+    "description": "Cremation, burial income, cemetery plots, caskets, urns, paw prints, memorial services"
+  },
+  {
+    "code": "5060",
+    "name": "Behavior Services Revenue",
+    "description": "Behavior wellness, separation anxiety, aggression, destructive behavior modification"
+  },
+  {
+    "code": "5070",
+    "name": "Alternative and Complementary Medicine Revenue",
+    "description": "Chiropractic, acupuncture, and homeopathy services"
+  },
+  {
+    "code": "5080",
+    "name": "Specialist Revenue",
+    "description": "Board-certified veterinarian specialty services (ophthalmology, internal medicine, oncology, ultrasound)"
+  },
+  {
+    "code": "5095",
+    "name": "Medical Waste Revenue",
+    "description": "Hazardous waste fees, sharps container disposal"
+  },
+  {
+    "code": "5099",
+    "name": "Large Animal Services Revenue",
+    "description": "Large animal species care (if >5% of practice revenue)"
+  },
+  {
+    "code": "5100",
+    "name": "Pharmacy Revenue",
+    "description": "Pharmacy Revenue - FDA prescription medications, pills, capsules, liquids, topicals, controlled substances"
+  },
+  {
+    "code": "5105",
+    "name": "FDA Prescription Meds Revenue",
+    "description": "Oral/transdermal FDA approved medications, sublingual drops"
+  },
+  {
+    "code": "5110",
+    "name": "Injection Revenue",
+    "description": "FDA inpatient/outpatient injections, insulin, Immiticide, Cytopoint, Solensia, Librela, allergy injections"
+  },
+  {
+    "code": "5115",
+    "name": "FDA Prescription Flea/Tick Non-injectable Prevention Revenue",
+    "description": "Comfortis, Simparica, Credelio, NexGard, Bravecto, Frontline, Seresto"
+  },
+  {
+    "code": "5120",
+    "name": "FDA Prescription HW Non-injectable Prevention Revenue",
+    "description": "Heartworm prevention: Sentinel, Trifexis, Heartgard, Advantage Multi, Revolution"
+  },
+  {
+    "code": "5125",
+    "name": "Injectable Parasite Prevention Revenue",
+    "description": "ProHeart 6 & 12 month, Bravecto Quantum"
+  },
+  {
+    "code": "5130",
+    "name": "Internet Pharmacy Revenue",
+    "description": "Online portal sales (VetSource, MyVetDirect), products shipped directly to client"
+  },
+  {
+    "code": "5200",
+    "name": "Dietary Product Revenue",
+    "description": "Dietary Product Revenue - therapeutic diets, retail diets, internet diet sales"
+  },
+  {
+    "code": "5201",
+    "name": "Therapeutic Diet Revenue",
+    "description": "Prescription diets for diagnosed medical conditions"
+  },
+  {
+    "code": "5202",
+    "name": "Retail Diet Revenue",
+    "description": "Wellness/maintenance diets, pediatric diets, traditional food without therapeutic formulation"
+  },
+  {
+    "code": "5203",
+    "name": "Internet Diet Revenue",
+    "description": "Online portal diet sales (Hills to Home, Purina, VetSource)"
+  },
+  {
+    "code": "5300",
+    "name": "Laboratory Revenue",
+    "description": "Laboratory Revenue - in-house and reference lab services, CBC, chemistry, urinalysis, fecal analysis, cytology, histopathology"
+  },
+  {
+    "code": "5301",
+    "name": "In-House Lab Revenue",
+    "description": "Pre-surgical tests, CBC, chemistry, urinalysis, fecal analysis, cytology, skin scraping, phlebotomy"
+  },
+  {
+    "code": "5302",
+    "name": "Outside (Reference) Lab Revenue",
+    "description": "Antech, IDEXX, state diagnostic labs, histopathology, necropsy fees"
+  },
+  {
+    "code": "5400",
+    "name": "Imaging Revenue",
+    "description": "Imaging Revenue - radiographs, CT, ultrasound, MRI, in-house interpretation"
+  },
+  {
+    "code": "5403",
+    "name": "X-Ray Revenue",
+    "description": "Radiographs, Penn Hip, OFA fees"
+  },
+  {
+    "code": "5404",
+    "name": "Dental X-Ray Revenue",
+    "description": "Dental radiographs and interpretation"
+  },
+  {
+    "code": "5405",
+    "name": "CT Scan Services Revenue",
+    "description": "Computed tomography imaging"
+  },
+  {
+    "code": "5410",
+    "name": "Ultrasound Services Revenue",
+    "description": "Ultrasound imaging, urine cystocentesis, fine needle aspirate"
+  },
+  {
+    "code": "5415",
+    "name": "MRI Services Revenue",
+    "description": "Magnetic resonance imaging scans"
+  },
+  {
+    "code": "5420",
+    "name": "Specialist (Imaging) Consultation Revenue",
+    "description": "Board-certified radiologist consultations"
+  },
+  {
+    "code": "5500",
+    "name": "Surgery Revenue",
+    "description": "Surgery Revenue - non-specialist and specialist surgery, orthopedic, soft tissue, laparoscopy, endoscopy"
+  },
+  {
+    "code": "5510",
+    "name": "Non-Specialist Surgery Revenue",
+    "description": "General surgery room usage, instruments, implants, surgeon fees"
+  },
+  {
+    "code": "5520",
+    "name": "Specialist Surgery Revenue",
+    "description": "Board-certified veterinary surgeon services"
+  },
+  {
+    "code": "5600",
+    "name": "Anesthesia, Sedatives, Tranquilizers Revenue",
+    "description": "Anesthesia, Sedatives, Tranquilizers Revenue - inhaled/injectable anesthetics, analgesics, anxiolytics, sedatives, tranquilizers, reversals, nerve blocks"
+  },
+  {
+    "code": "5700",
+    "name": "Dentistry Revenue",
+    "description": "Dentistry Revenue - dental prophylaxis, extractions, orthodontics, endodontics, oral surgery, gingival flaps"
+  },
+  {
+    "code": "5800",
+    "name": "Ancillary Products & Services Revenue",
+    "description": "Ancillary Products & Services Revenue - OTC products, nutraceuticals, shampoos, homeopathic products, pet supplies, non-FDA flea/tick products"
+  },
+  {
+    "code": "5801",
+    "name": "OTC Products, Shampoos, & Nutraceuticals Revenue",
+    "description": "Vitamins, Chinese herbs, homeopathic products, dental treats, probiotics, Elizabethan collars"
+  },
+  {
+    "code": "5802",
+    "name": "Pet Supplies Retail Revenue",
+    "description": "Leashes, harnesses, collars, toys, brushes, flea combs, pet treats, nail trimmers, carriers"
+  },
+  {
+    "code": "5803",
+    "name": "Non-FDA Flea and Tick Control Product Revenue",
+    "description": "Frontline, Seresto, Capstar, Vectra, dips, sprays, powders"
+  },
+  {
+    "code": "5804",
+    "name": "Internet Ancillary Product Revenue",
+    "description": "Online portal ancillary product sales"
+  },
+  {
+    "code": "5825",
+    "name": "Boarding Revenue",
+    "description": "Boarding Revenue - boarding and daycare services"
+  },
+  {
+    "code": "5850",
+    "name": "Grooming Revenue",
+    "description": "Grooming Revenue - bathing, grooming, nail trims, anal gland expression by grooming personnel"
+  },
+  {
+    "code": "5875",
+    "name": "Wellness/Pre-Paid  Plan Revenue",
+    "description": "Wellness/Pre-Paid Plans Revenue - wellness plan payments, enrollment fees, monthly payments"
+  },
+  {
+    "code": "5900",
+    "name": "Fee Discounts & Client Returns",
+    "description": "Fee Discounts and Client Returns - discounts, coupons, rebates, returns and allowances"
+  },
+  {
+    "code": "5905",
+    "name": "Fee Discounts",
+    "description": "Client, employee, product discounts, senior citizen, military, referral discounts"
+  },
+  {
+    "code": "5910",
+    "name": "Returns and Allowances",
+    "description": "Disputed work refunds, product returns"
+  },
+  {
+    "code": "5915",
+    "name": "Instant Rebates",
+    "description": "Manufacturer rebates reimbursed to practice"
+  },
+  {
+    "code": "6000",
+    "name": "Professional Services Costs",
+    "description": "Professional Services Costs - consumable supplies for treating patients, vaccines, catheters, syringes, bandage supplies, microchips, euthanasia solutions"
+  },
+  {
+    "code": "6050",
+    "name": "Mortuary/Cremation Costs",
+    "description": "Cremation service costs, urns, burial supplies, memorial service expenses, pet cemetery fees"
+  },
+  {
+    "code": "6100",
+    "name": "Pharmacy Costs",
+    "description": "Pharmacy Costs - FDA prescription medications, dispensing supplies, containers, labels"
+  },
+  {
+    "code": "6200",
+    "name": "Dietary Product Costs",
+    "description": "Dietary Product Costs - therapeutic diets, retail diets, internet diet costs"
+  },
+  {
+    "code": "6300",
+    "name": "Laboratory Costs",
+    "description": "Laboratory Costs - lab supplies, reagents, reference lab charges, histopathology"
+  },
+  {
+    "code": "6400",
+    "name": "Imaging Costs",
+    "description": "Imaging Costs - radiographic film, processing chemicals, contrast materials, lead shields, OFA/PennHIP fees"
+  },
+  {
+    "code": "6500",
+    "name": "Surgery Costs",
+    "description": "Surgery Costs - bone plates, screws, implants, sutures, surgical drapes, gloves, sterilization supplies"
+  },
+  {
+    "code": "6600",
+    "name": "Anesthesia, Sedatives, Tranquilizers Costs",
+    "description": "Anesthesia, Sedatives, Tranquilizers Costs - inhaled/injectable anesthetics, analgesics, nerve blocks, oxygen, endotracheal tubes"
+  },
+  {
+    "code": "6700",
+    "name": "Dentistry Costs",
+    "description": "Dentistry Costs - dental instruments, Doxirobe, OraVet, dental hygiene products"
+  },
+  {
+    "code": "6800",
+    "name": "Ancillary Products & Services Costs",
+    "description": "Ancillary Service & Product Costs - OTC products, pet supplies, flea/tick products, internet ancillary costs"
+  },
+  {
+    "code": "6825",
+    "name": "Boarding Costs",
+    "description": "Boarding Costs - boarding supplies, food, bedding, litter"
+  },
+  {
+    "code": "6850",
+    "name": "Grooming Costs",
+    "description": "Grooming Costs - grooming supplies, shampoos, bathing products"
+  },
+  {
+    "code": "7000",
+    "name": "Owner Veterinarian Compensation",
+    "description": "Owner Veterinarian Compensation - salaries, wages, bonuses, commissions for owner veterinarians (clinical time only)"
+  },
+  {
+    "code": "7005",
+    "name": "Owner Management Compensation",
+    "description": "Owner Management Compensation - owner compensation for management duties (non-clinical)"
+  },
+  {
+    "code": "7080",
+    "name": "Associate Veterinarian Compensation",
+    "description": "Associate Veterinarian Compensation - employed veterinarians (non-owner) salaries, wages, bonuses, commissions"
+  },
+  {
+    "code": "7083",
+    "name": "Relief Veterinarian - Contractor Payments",
+    "description": "Relief Veterinarian - Contractor Payments - temporary/episodic relief veterinarian services"
+  },
+  {
+    "code": "7085",
+    "name": "Veterinary Specialist - Contractor Payments",
+    "description": "Veterinary Specialist - Contractor Payments - board-certified specialists (radiology, surgery, internal medicine)"
+  },
+  {
+    "code": "7090",
+    "name": "Intern Veterinarians Compensation",
+    "description": "Intern Veterinarians Compensation - newly graduated veterinarians in work-study positions"
+  },
+  {
+    "code": "7100",
+    "name": "Other Support Staff Compensation",
+    "description": "Other Support Staff Compensation - general support staff wages"
+  },
+  {
+    "code": "7130",
+    "name": "Registered Veterinary Technicians Compensation",
+    "description": "Registered Veterinary Technicians Compensation - RVT salaries, wages, bonuses"
+  },
+  {
+    "code": "7135",
+    "name": "Veterinary/Technical Assistants Compensation",
+    "description": "Veterinary/Technical Assistants Compensation - unregistered vet assistants, transport drivers"
+  },
+  {
+    "code": "7140",
+    "name": "Client Service Reps/Receptionists Compensation",
+    "description": "Client Service Reps/Receptionists Compensation - CSR and receptionist wages"
+  },
+  {
+    "code": "7145",
+    "name": "Other (Non-DVM) Temporary Services - Contractor Payments",
+    "description": "Other (Non-DVM) Temporary Services - Contractor Payments - clerical, janitorial, assistant, bookkeeping spot labor"
+  },
+  {
+    "code": "7150",
+    "name": "Maintenance Personnel Compensation",
+    "description": "Maintenance Personnel Compensation - maintenance and janitorial employee wages"
+  },
+  {
+    "code": "7160",
+    "name": "Administrative Personnel Compensation",
+    "description": "Administrative Personnel Compensation - administrative, managerial, back office staff wages"
+  },
+  {
+    "code": "7162",
+    "name": "Practice Manager/Administrator Compensation",
+    "description": "Practice Manager/Administrator Compensation - designated practice manager wages"
+  },
+  {
+    "code": "7164",
+    "name": "Office Manager/Executive Assistant Compensation",
+    "description": "Office Manager/Executive Assistant Compensation - office manager/administrative assistant wages"
+  },
+  {
+    "code": "7166",
+    "name": "Bookkeeper Compensation",
+    "description": "Bookkeeper Compensation - designated practice bookkeeper wages (employee, not contractor)"
+  },
+  {
+    "code": "7168",
+    "name": "Clerical/Secretarial Personnel Compensation",
+    "description": "Clerical/Secretarial Personnel Compensation - clerical and transcriptionist wages"
+  },
+  {
+    "code": "7170",
+    "name": "Groomers Compensation",
+    "description": "Groomers Compensation - pet groomer wages, commissions, bonuses"
+  },
+  {
+    "code": "7175",
+    "name": "Kennel Assistants Compensation",
+    "description": "Kennel Assistants Compensation - kennel and ward assistant wages"
+  },
+  {
+    "code": "7200",
+    "name": "Employer Payroll Taxes Account Series",
+    "description": "Employer Payroll Taxes - FICA, federal/state unemployment, other employer payroll taxes"
+  },
+  {
+    "code": "7300",
+    "name": "Employee Benefit Program Expense",
+    "description": "Employee Benefit Program - group health, dental, vision, life insurance, EAP"
+  },
+  {
+    "code": "7310",
+    "name": "Employer Retirement Contribution Expense",
+    "description": "Employer Retirement Contribution - employer 401k/retirement funding (not employee withholding)"
+  },
+  {
+    "code": "7320",
+    "name": "Professional Liability Insurance Premium Expense",
+    "description": "Professional Liability Insurance Premium - practice and DVM malpractice insurance"
+  },
+  {
+    "code": "7340",
+    "name": "Workers Compensation Premium/Tax Expense",
+    "description": "Workers Compensation Premium/Tax - workers comp insurance for employee injuries"
+  },
+  {
+    "code": "7360",
+    "name": "Continuing Education Registration Expense",
+    "description": "Continuing Education Registration - webinars, seminars, conferences, licensure compliance"
+  },
+  {
+    "code": "7365",
+    "name": "Travel and Lodging Expense",
+    "description": "Travel and Lodging - CE-related travel, airfare, lodging, transportation, mileage"
+  },
+  {
+    "code": "7400",
+    "name": "Study and Buying Group Fees",
+    "description": "Study and Buying Group Fees - annual dues, study group expenses, hotel/lodging for study groups"
+  },
+  {
+    "code": "7440",
+    "name": "Business Meals",
+    "description": "Business Meals - business meetings, client/customer meals (50% deductible)"
+  },
+  {
+    "code": "7441",
+    "name": "Entertainment",
+    "description": "Entertainment - sports tickets, concerts, country club dues (not deductible)"
+  },
+  {
+    "code": "7442",
+    "name": "Staff Meals/Snacks",
+    "description": "Staff Meals/Snacks - employee meals during shifts, in-office cafeteria"
+  },
+  {
+    "code": "7445",
+    "name": "Staff Events & Recreation",
+    "description": "Staff Events & Recreation - staff picnics, holiday parties (100% employees invited)"
+  },
+  {
+    "code": "7450",
+    "name": "Employee Recruitment",
+    "description": "Employee Recruitment - background checks, drug screening, interview airfare, moving expenses"
+  },
+  {
+    "code": "7460",
+    "name": "Laundry & Uniform",
+    "description": "Laundry & Uniform - employee uniform cleaning, uniform purchases"
+  },
+  {
+    "code": "7470",
+    "name": "Employment Practices Liability Insurance",
+    "description": "Employment Practices Liability Insurance - employee litigation insurance"
+  },
+  {
+    "code": "7500",
+    "name": "Rent on Practice Real Estate",
+    "description": "Rent on Practice Real Estate - lease/rent payments for practice facility"
+  },
+  {
+    "code": "7510",
+    "name": "Rent on Equipment",
+    "description": "Rent on Equipment - equipment rental fees, operating lease payments"
+  },
+  {
+    "code": "7515",
+    "name": "Outside Storage",
+    "description": "Outside Storage - off-premises storage rental"
+  },
+  {
+    "code": "7520",
+    "name": "Maintenance",
+    "description": "Maintenance - facility and equipment maintenance to prevent failure"
+  },
+  {
+    "code": "7530",
+    "name": "Service Contracts",
+    "description": "Service Contracts - security, landscaping, snow removal, HVAC maintenance"
+  },
+  {
+    "code": "7540",
+    "name": "Housekeeping & Janitorial",
+    "description": "Housekeeping & Janitorial - contracted cleaning services, janitorial supplies"
+  },
+  {
+    "code": "7570",
+    "name": "Repairs",
+    "description": "Repairs - facility and equipment repairs to restore broken property"
+  },
+  {
+    "code": "7580",
+    "name": "Property, Casualty, & Liability Insurance Premiums",
+    "description": "Property, Casualty, & Liability Insurance Premiums - facility, inventory, contents, business overhead insurance"
+  },
+  {
+    "code": "7590",
+    "name": "Real Estate Tax",
+    "description": "Real Estate Tax - property real estate taxes (if paid by practice per lease)"
+  },
+  {
+    "code": "7600",
+    "name": "Personal Property Tax",
+    "description": "Personal Property Tax - tangible/intangible personal property taxes"
+  },
+  {
+    "code": "7620",
+    "name": "Practice Vehicle",
+    "description": "Practice Vehicle - vehicle fuel, repairs, maintenance, insurance, license, lease payments"
+  },
+  {
+    "code": "7660",
+    "name": "Utility Services",
+    "description": "Utility Services - electricity, natural gas, sewer, water"
+  },
+  {
+    "code": "7670",
+    "name": "Telephone Services",
+    "description": "Telephone Services - landline, fax, telephone expenses"
+  },
+  {
+    "code": "7675",
+    "name": "Cable & Internet Services",
+    "description": "Cable & Internet Services - cable, DSL, fiber-optic, internet providers"
+  },
+  {
+    "code": "7680",
+    "name": "Answering Service",
+    "description": "Answering Service - voicemail, answering service expenses"
+  },
+  {
+    "code": "7690",
+    "name": "Rubbish Disposal",
+    "description": "Rubbish Disposal - routine rubbish services, document shredding"
+  },
+  {
+    "code": "7700",
+    "name": "Administrative Expense Account Series",
+    "description": "Administrative Expenses - licenses, permits, taxes, dues, office expenses"
+  },
+  {
+    "code": "7800",
+    "name": "Adverrtising & Promotion Expense Account Series",
+    "description": "Advertising & Promotion Expenses - directory advertising, web ads, billboards, direct mail, business cards, sponsorships"
+  },
+  {
+    "code": "7900",
+    "name": "Fee Income Collection Expense Account Series",
+    "description": "Fee Income Collection Expenses - bank fees, credit card fees, collection agency fees, bad debts"
+  },
+  {
+    "code": "8000",
+    "name": "Depreciation Expense",
+    "description": "Depreciation Expense - fixed asset depreciation (10-year useful life)"
+  },
+  {
+    "code": "8050",
+    "name": "Amortization Expense",
+    "description": "Amortization Expense - intangible asset amortization"
+  },
+  {
+    "code": "9000",
+    "name": "Miscellaneous Revenue",
+    "description": "Miscellaneous Revenue - episodic revenue with no other classification, insurance payments for damaged property"
+  },
+  {
+    "code": "9010",
+    "name": "Rent Revenue",
+    "description": "Rent Revenue - sublet real estate receipts, practice-owned apartment rental"
+  },
+  {
+    "code": "9020",
+    "name": "Interest & Dividend Revenue",
+    "description": "Interest & Dividend Revenue - interest income, dividend income, Forms 1099-INT/DIV"
+  },
+  {
+    "code": "9030",
+    "name": "Gain/(Loss) on Asset Disposition",
+    "description": "Gain/(Loss) on Asset Disposition - fixed asset sale gain or loss"
+  },
+  {
+    "code": "9040",
+    "name": "Miscellaneous Expense",
+    "description": "Miscellaneous Expense - non-recurring expenses unrelated to daily operations"
+  },
+  {
+    "code": "9050",
+    "name": "Fines & Penalties",
+    "description": "Fines & Penalties - tax filing late fees, traffic tickets (non-deductible)"
+  },
+  {
+    "code": "9060",
+    "name": "Officer/Key Person Life Insurance",
+    "description": "Officer/Key Person Life Insurance - practice-owned life insurance premiums"
+  },
+  {
+    "code": "9070",
+    "name": "Officer Disability Insurance",
+    "description": "Officer Disability Insurance - officer disability insurance premiums"
+  },
+  {
+    "code": "9080",
+    "name": "Interest Expense \u2013 Financed",
+    "description": "Interest Expense - Financed - interest on debt service to financial institutions"
+  },
+  {
+    "code": "9090",
+    "name": "Interest Expense \u2013 Shareholder/Owner",
+    "description": "Interest Expense - Shareholder/Owner - interest on practice debt to shareholders/owners"
+  },
+  {
+    "code": "9095",
+    "name": "Interest Expense \u2013 Other",
+    "description": "Interest Expense - Other - vendor and other debt interest"
+  },
+  {
+    "code": "9100",
+    "name": "Federal Income Tax Provision",
+    "description": "Federal Income Tax Provision - federal income tax liability"
+  },
+  {
+    "code": "9200",
+    "name": "State Income Tax / Pass Through Entity Tax (PTET)",
+    "description": "State Income Tax / Pass Through Entity Tax (PTET) - state income tax"
+  },
+  {
+    "code": "9300",
+    "name": "Local Income Tax Provision",
+    "description": "Local Income Tax Provision - city, regional, local income tax"
+  },
+  {
+    "code": "9900",
+    "name": "Ask My Accountant",
+    "description": ""
+  }
+]

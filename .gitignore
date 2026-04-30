@@ -92,3 +92,7 @@ models/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Practice-specific learned corrections (per-practice memory)
+memory/*.md
+!memory/_default.md

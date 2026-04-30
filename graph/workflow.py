@@ -15,9 +15,11 @@ Supports:
 from langgraph.graph import StateGraph, END
 
 from graph.state import AgentState
-from agents.orchestrator import orchestrator_node, should_retry, save_outputs
+from agents.orchestrator import orchestrator_node, should_retry, should_retry_categorization, save_outputs
 from agents.extractor import extractor_node
 from agents.evaluator import evaluator_node
+from agents.categorizer import categorizer_node
+from agents.cat_evaluator import cat_evaluator_node
 
 
 def check_detection_result(state: dict) -> str:
@@ -68,6 +70,8 @@ def create_workflow(statement_types: list = None) -> StateGraph:
     workflow.add_node("orchestrator", orchestrator_node)
     workflow.add_node("extractor", extractor_node)
     workflow.add_node("evaluator", evaluator_node)
+    workflow.add_node("categorizer", categorizer_node)
+    workflow.add_node("cat_evaluator", cat_evaluator_node)
     workflow.add_node("save_outputs", save_outputs)
 
     # Set entry point
@@ -91,7 +95,20 @@ def create_workflow(statement_types: list = None) -> StateGraph:
         should_retry,
         {
             "extractor": "extractor",
-            "save_outputs": "save_outputs"
+            "categorizer": "categorizer"  # Pass to categorizer if evaluation passes
+        }
+    )
+
+    # After categorizer, evaluate categorization quality
+    workflow.add_edge("categorizer", "cat_evaluator")
+
+    # Conditional edge: retry categorization or save
+    workflow.add_conditional_edges(
+        "cat_evaluator",
+        should_retry_categorization,
+        {
+            "categorizer": "categorizer",
+            "save_outputs": "save_outputs",
         }
     )
 

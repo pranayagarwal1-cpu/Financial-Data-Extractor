@@ -154,7 +154,7 @@ def should_retry(state: dict) -> str:
     Conditional edge function to determine if re-extraction is needed.
 
     Returns:
-        'extractor' to retry, 'save_outputs' to finish
+        'extractor' to retry, 'categorizer' to proceed to categorization
     """
     evaluation = state.get("evaluation_result", {})
     retry_count = state.get("retry_count", 0)
@@ -168,7 +168,7 @@ def should_retry(state: dict) -> str:
     if all_passed:
         logging.info("All statements passed evaluation")
         print("✅ All statements passed evaluation!")
-        return "save_outputs"
+        return "categorizer"  # Proceed to categorization
 
     if retry_count < Config.MAX_RETRIES:
         logging.warning(f"Extraction quality insufficient, retrying ({retry_count + 1}/{Config.MAX_RETRIES})")
@@ -176,13 +176,51 @@ def should_retry(state: dict) -> str:
         return "extractor"
 
     logging.error("Max retries reached")
-    print("❌ Max retries reached. Saving current extraction.")
+    print("❌ Max retries reached. Proceeding to categorization.")
+    return "categorizer"  # Even with failed evaluation, try to categorize what we have
+
+
+def should_retry_categorization(state: dict) -> str:
+    """
+    Conditional edge function to determine if re-categorization is needed.
+
+    Returns:
+        'categorizer' to retry, 'save_outputs' to proceed
+    """
+    cat_evaluation = state.get("cat_evaluation_result", {})
+    cat_retry_count = state.get("cat_retry_count", 0)
+
+    all_passed = all(
+        eval_result.get("passed", False)
+        for eval_result in cat_evaluation.values()
+    ) if cat_evaluation else False
+
+    if all_passed:
+        logging.info("Categorization quality sufficient")
+        print("✅ Categorization quality sufficient!")
+        return "save_outputs"
+
+    if cat_retry_count < Config.MAX_CAT_RETRIES:
+        logging.warning(
+            f"Categorization quality insufficient, retrying "
+            f"({cat_retry_count + 1}/{Config.MAX_CAT_RETRIES})"
+        )
+        print(
+            f"⚠️  Categorization quality insufficient. "
+            f"Retrying ({cat_retry_count + 1}/{Config.MAX_CAT_RETRIES})..."
+        )
+        return "categorizer"
+
+    logging.warning("Max cat retries reached, saving anyway")
+    print("⚠️  Max categorization retries reached. Saving anyway.")
     return "save_outputs"
 
 
 def save_outputs(state: dict) -> dict:
     """
     Save the final outputs (JSON and Excel) for all statement types.
+
+    Uses categorized_data if available (with CoA mappings), otherwise falls back to extracted_data.
 
     Creates separate files for each statement type:
     - {pdf_name}_balance_sheet_{timestamp}.json/xlsx
@@ -198,8 +236,12 @@ def save_outputs(state: dict) -> dict:
     run_id = state.get("run_id")
     start_time = time.time()
 
-    extracted_data = state.get("extracted_data", {})
-    if not extracted_data:
+    # Use categorized_data if available, otherwise use extracted_data
+    data_to_save = state.get("categorized_data", {})
+    if not data_to_save:
+        data_to_save = state.get("extracted_data", {})
+
+    if not data_to_save:
         logging.error("No data to save")
         return {"error_message": "No data to save"}
 
@@ -211,7 +253,7 @@ def save_outputs(state: dict) -> dict:
 
     output_files = []
 
-    for statement_type, data in extracted_data.items():
+    for statement_type, data in data_to_save.items():
         statement_name = statement_type.value
 
         # Save JSON

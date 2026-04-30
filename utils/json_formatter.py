@@ -2,13 +2,16 @@ import json
 from typing import Any
 
 
-def format_json_output(data: dict, indent: int = 2) -> str:
+def format_json_output(data: dict, indent: int = 2, include_categorization: bool = True) -> str:
     """
-    Format extracted balance sheet data as a pretty-printed JSON string.
+    Format extracted financial statement data as a pretty-printed JSON string.
+
+    Preserves categorization metadata if present (CoA mappings, confidence, reasoning).
 
     Args:
-        data: Dict with extracted balance sheet data
+        data: Dict with extracted financial statement data
         indent: Number of spaces for indentation
+        include_categorization: Whether to include categorization metadata
 
     Returns:
         Formatted JSON string

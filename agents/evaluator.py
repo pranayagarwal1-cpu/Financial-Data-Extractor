@@ -200,7 +200,7 @@ def evaluator_node(state: dict) -> dict:
     Returns:
         Updated state with evaluation_result (Dict[StatementType, dict])
     """
-    import ollama
+    from utils.ollama_client import chat
     from utils.observability import get_observability
 
     obs = get_observability()
@@ -234,7 +234,7 @@ def evaluator_node(state: dict) -> dict:
 
             # Call LLM for evaluation with timing
             llm_start = time.time()
-            response = ollama.chat(
+            response = chat(
                 model=Config.EVALUATION_MODEL,
                 messages=[{
                     "role": "user",

@@ -1,0 +1,25 @@
+digraph Workflow {
+    rankdir=TB;
+    node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=12];
+    edge [fontname="Helvetica", fontsize=10];
+
+    start [label="START", shape=circle, fillcolor="#e8e8e8", width=0.5, height=0.5];
+    orchestrator [label="Orchestrator\n(LLM Page Detection)", fillcolor="#4a90d9"];
+    extractor [label="Extractor\n(VLM Data Extraction)", fillcolor="#7fb069"];
+    evaluator [label="Evaluator\n(LLM-as-Judge)", fillcolor="#f4a261"];
+    categorizer [label="Categorizer\n(CoA Mapping)", fillcolor="#9b5de5"];
+    cat_evaluator [label="Cat Evaluator\n(Categorization Judge)", fillcolor="#f4a261"];
+    save_outputs [label="Save Outputs\n(JSON / Excel)", fillcolor="#00b4d8"];
+    end [label="END", shape=circle, fillcolor="#e8e8e8", width=0.5, height=0.5];
+
+    start -> orchestrator;
+    orchestrator -> extractor [label="pages found", color="#2a9d8f", penwidth=2];
+    orchestrator -> save_outputs [label="no pages / error", color="#e76f51", style=dashed];
+    extractor -> evaluator;
+    evaluator -> extractor [label="retry", color="#e76f51", style=dashed];
+    evaluator -> categorizer [label="pass", color="#2a9d8f", penwidth=2];
+    categorizer -> cat_evaluator;
+    cat_evaluator -> categorizer [label="retry", color="#e76f51", style=dashed];
+    cat_evaluator -> save_outputs [label="pass", color="#2a9d8f", penwidth=2];
+    save_outputs -> end;
+}
