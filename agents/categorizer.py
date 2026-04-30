@@ -58,36 +58,10 @@ def extract_line_items_from_statement(data: dict) -> List[dict]:
 MAX_BATCH_SIZE = 25
 
 
-def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: bool = False, practice_id: str = None) -> List[dict]:
-    """
-    Use LLM to match unmatched line items to CoA accounts.
-
-    Splits large item sets into batches to avoid timeouts.
-
-    Args:
-        unmatched_items: List of line items that couldn't be matched by token matcher
-        run_id: Optional run ID for observability
-        is_retry: If True, use more aggressive matching guidance
-        practice_id: Optional practice ID for loading learned corrections
-
-    Returns:
-        List of LLM match results with account_id, confidence, reasoning
-    """
+def _llm_match_single_batch(batch_items: List[dict], run_id: str, is_retry: bool, practice_id: str) -> List[dict]:
+    """Call LLM for a single batch of items (worker for parallel execution)."""
     from utils.observability import get_observability
     obs = get_observability()
-
-    if not unmatched_items:
-        return []
-
-    # Split large batches to avoid timeouts
-    if len(unmatched_items) > MAX_BATCH_SIZE:
-        all_results = []
-        for i in range(0, len(unmatched_items), MAX_BATCH_SIZE):
-            batch = unmatched_items[i:i + MAX_BATCH_SIZE]
-            print(f"    Batching {len(batch)} items ({i+1}-{i+len(batch)} of {len(unmatched_items)})...")
-            batch_results = llm_match_batch(batch, run_id, is_retry, practice_id)
-            all_results.extend(batch_results)
-        return all_results
 
     # Serialize CoA for prompt context (include descriptions for semantic matching)
     coa_context = serialize_coa_for_prompt(include_descriptions=True)
@@ -95,7 +69,7 @@ def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: b
     # Prepare items for batch processing
     items_json = json.dumps([
         {"label": item["label"], "section": item["section"], "values": item["values"]}
-        for item in unmatched_items
+        for item in batch_items
     ], indent=2)
 
     # Load learned corrections for this practice
@@ -284,7 +258,77 @@ Set needs_review=true for:
     except json.JSONDecodeError as e:
         logging.error(f"Failed to parse LLM response: {e}")
         # Return empty results on parse failure
-        return [{"label": item["label"], "error": f"LLM parse error: {e}"} for item in unmatched_items]
+        return [{"label": item["label"], "error": f"LLM parse error: {e}"} for item in batch_items]
+
+
+def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: bool = False, practice_id: str = None) -> List[dict]:
+    """
+    Use LLM to match unmatched line items to CoA accounts.
+
+    Splits large item sets into batches and processes them in parallel
+    via ThreadPoolExecutor to reduce total categorization time.
+    Failed batches are retried sequentially to avoid overwhelming Ollama.
+
+    Args:
+        unmatched_items: List of line items that couldn't be matched by token matcher
+        run_id: Optional run ID for observability
+        is_retry: If True, use more aggressive matching guidance
+        practice_id: Optional practice ID for loading learned corrections
+
+    Returns:
+        List of LLM match results with account_id, confidence, reasoning
+    """
+    if not unmatched_items:
+        return []
+
+    # No need to parallelize a single batch
+    if len(unmatched_items) <= MAX_BATCH_SIZE:
+        return _llm_match_single_batch(unmatched_items, run_id, is_retry, practice_id)
+
+    # Build batches
+    batches = []
+    for i in range(0, len(unmatched_items), MAX_BATCH_SIZE):
+        batch = unmatched_items[i:i + MAX_BATCH_SIZE]
+        batches.append(batch)
+        print(f"    Batching {len(batch)} items ({i+1}-{i+len(batch)} of {len(unmatched_items)})...")
+
+    print(f"  Launching {len(batches)} batch(es) in parallel...")
+
+    all_results = []
+    failed_batches = []
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    with ThreadPoolExecutor(max_workers=len(batches)) as executor:
+        future_to_batch = {
+            executor.submit(_llm_match_single_batch, batch, run_id, is_retry, practice_id): idx
+            for idx, batch in enumerate(batches)
+        }
+        for future in as_completed(future_to_batch):
+            batch_idx = future_to_batch[future]
+            try:
+                batch_results = future.result()
+                all_results.extend(batch_results)
+                print(f"    Batch {batch_idx + 1}/{len(batches)} complete ({len(batch_results)} results)")
+            except Exception as e:
+                logging.error(f"Batch {batch_idx + 1} failed: {e}")
+                print(f"    ⚠️  Batch {batch_idx + 1}/{len(batches)} failed: {e}")
+                failed_batches.append((batch_idx, batches[batch_idx]))
+
+    # Retry failed batches sequentially with backoff
+    if failed_batches:
+        print(f"  Retrying {len(failed_batches)} failed batch(s) sequentially...")
+        for attempt, (batch_idx, batch) in enumerate(failed_batches, 1):
+            if attempt > 1:
+                time.sleep(5)  # Brief cooldown between sequential retries
+            try:
+                batch_results = _llm_match_single_batch(batch, run_id, is_retry, practice_id)
+                all_results.extend(batch_results)
+                print(f"    Retry batch {batch_idx + 1} complete ({len(batch_results)} results)")
+            except Exception as e:
+                logging.error(f"Retry batch {batch_idx + 1} failed again: {e}")
+                print(f"    ❌ Retry batch {batch_idx + 1} failed again: {e}")
+
+    return all_results
 
 
 def apply_categorization_to_statement(

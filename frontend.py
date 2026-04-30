@@ -479,7 +479,7 @@ if st.session_state.get("processing_complete"):
 
                                     with col2:
                                         st.markdown("**📊 Extracted Data**")
-                                        st.caption(f"Click values to edit")
+                                        st.caption("Read-only preview — use Review & Correct section below to edit CoA mappings")
 
                                         # Display extracted data as editable table
                                         if extracted_data.get("sections"):
@@ -588,10 +588,39 @@ if st.session_state.get("processing_complete"):
                         )
 
                     # -------------------------------------------------------------------------
+                    # Categorization Evaluation
+                    # -------------------------------------------------------------------------
+                    cat_eval = final_state.get("cat_evaluation_result", {})
+                    if cat_eval:
+                        st.markdown("##### ⚖️ CoA Categorization Evaluation")
+                        for st_key, cat_data_eval in cat_eval.items():
+                            if st_key == "income_statement":
+                                cat_passed = cat_data_eval.get("passed", False)
+                                cat_scores = cat_data_eval.get("scores", {})
+                                cat_feedback = cat_data_eval.get("feedback", "")
+                                col1, col2 = st.columns([1, 2])
+                                with col1:
+                                    st.metric("Status", "✅ Pass" if cat_passed else "❌ Review")
+                                with col2:
+                                    avg_cat = sum(cat_scores.values()) / len(cat_scores) if cat_scores else 0
+                                    st.metric("Avg Score", f"{avg_cat:.1f}/10")
+                                if cat_feedback:
+                                    if not cat_passed:
+                                        st.warning(f"⚠️ {cat_feedback}")
+                                    else:
+                                        st.info(f"✅ {cat_feedback}")
+                                if cat_scores:
+                                    cat_score_df = pd.DataFrame([
+                                        {"Criterion": k.replace("_", " ").title(), "Score": v}
+                                        for k, v in cat_scores.items()
+                                    ])
+                                    st.dataframe(cat_score_df, use_container_width=True, hide_index=True)
+
+                    # -------------------------------------------------------------------------
                     # Review & Correct (needs_review / low-confidence rows only)
                     # -------------------------------------------------------------------------
-                    st.markdown("##### 📝 Review & Correct")
-                    st.caption("Confirm or correct low-confidence / flagged CoA mappings")
+                    st.markdown("##### 📝 Review & Correct CoA Mappings")
+                    st.caption("Click the **Corrected Code** cell to open the dropdown and select a new account. Then click **💾 Save Corrections**.")
 
                     # Load categorized data from JSON
                     cat_json = statement_files.get(StatementType.INCOME_STATEMENT, {}).get("json")
@@ -612,31 +641,38 @@ if st.session_state.get("processing_complete"):
                                     review_items.append({
                                         "label": row.get("label", ""),
                                         "section": section_name,
-                                        "current_code": cat.get("coa_code", ""),
-                                        "current_name": cat.get("coa_name", ""),
-                                        "confidence": cat.get("confidence", ""),
-                                        "reasoning": cat.get("reasoning", ""),
+                                        "current_code": str(cat.get("coa_code", "")),
+                                        "current_name": str(cat.get("coa_name", "")),
+                                        "confidence": str(cat.get("confidence", "")),
+                                        "reasoning": str(cat.get("reasoning", "")),
                                     })
 
                         if review_items:
                             st.info(f"{len(review_items)} item(s) flagged for review")
 
-                            # Build CoA dropdown options
-                            from coa.chart_of_accounts import COA_ACCOUNTS
-                            coa_options = {}
+                            # Build CoA dropdown options as display strings (code - name)
+                            from coa.chart_of_accounts import COA_ACCOUNTS, get_account_by_code
+                            coa_display_options = []
                             for code, acc in COA_ACCOUNTS.items():
-                                coa_options[code] = f"{code} - {acc.name}"
+                                coa_display_options.append(f"{code} - {acc.name}")
+
+                            # Ensure every current code has a display option
+                            for item in review_items:
+                                display = f"{item['current_code']} - {item['current_name']}"
+                                if display not in coa_display_options:
+                                    coa_display_options.insert(0, display)
 
                             review_df = pd.DataFrame(review_items)
-                            review_df["corrected_code"] = review_df["current_code"]
+                            review_df["corrected_code"] = review_df.apply(
+                                lambda r: f"{r['current_code']} - {r['current_name']}", axis=1
+                            )
 
                             edited_df = st.data_editor(
                                 review_df,
                                 column_config={
                                     "corrected_code": st.column_config.SelectboxColumn(
                                         "Corrected Code",
-                                        options=list(coa_options.keys()),
-                                        format_func=lambda x: coa_options.get(x, x)
+                                        options=coa_display_options,
                                     ),
                                     "label": st.column_config.TextColumn("Line Item", disabled=True),
                                     "section": st.column_config.TextColumn("Section", disabled=True),
@@ -650,17 +686,29 @@ if st.session_state.get("processing_complete"):
                                 key=f"review_editor_{pdf_name}"
                             )
 
+                            # Quick CoA reference (searchable)
+                            with st.expander("🔍 CoA Account Lookup (reference)", expanded=False):
+                                ref_search = st.text_input("Search account name or code", key=f"ref_search_{pdf_name}")
+                                ref_matches = [opt for opt in coa_display_options if ref_search.lower() in opt.lower()]
+                                if ref_search:
+                                    st.write(f"{len(ref_matches)} match(es)")
+                                    st.write("  ".join([f"`{opt}`" for opt in ref_matches[:20]]))
+                                else:
+                                    st.caption("Type above to search all 196 accounts")
+
                             if st.button("💾 Save Corrections", key=f"save_corr_{pdf_name}", type="primary"):
                                 corrections = []
                                 for _, row in edited_df.iterrows():
-                                    if str(row["corrected_code"]) != str(row["current_code"]):
-                                        from coa.chart_of_accounts import get_account_by_code
-                                        acc = get_account_by_code(str(row["corrected_code"]))
+                                    orig_code = str(row["current_code"])
+                                    new_display = str(row["corrected_code"])
+                                    new_code = new_display.split(" - ")[0] if " - " in new_display else new_display
+                                    if new_code != orig_code:
+                                        acc = get_account_by_code(new_code)
                                         corrections.append({
                                             "label": row["label"],
                                             "section": row["section"],
-                                            "wrong_code": str(row["current_code"]),
-                                            "correct_code": str(row["corrected_code"]),
+                                            "wrong_code": orig_code,
+                                            "correct_code": new_code,
                                             "correct_name": acc.name if acc else "",
                                         })
 
