@@ -1,313 +1,251 @@
 [
   {
     "code": "1010",
-    "name": "Petty Cash",
-    "description": ""
+    "name": "Petty Cash"
   },
   {
     "code": "1020",
-    "name": "Cash in Daily Drawer",
-    "description": ""
+    "name": "Cash in Daily Drawer"
   },
   {
     "code": "1030",
-    "name": "Undeposited Funds",
-    "description": ""
+    "name": "Undeposited Funds"
   },
   {
     "code": "1050",
-    "name": "Primary Checking Account",
-    "description": ""
+    "name": "Primary Checking Account"
   },
   {
     "code": "1060",
-    "name": "Secondary Checking Account",
-    "description": ""
+    "name": "Secondary Checking Account"
   },
   {
     "code": "1150",
-    "name": "Savings Account",
-    "description": ""
+    "name": "Savings Account"
   },
   {
     "code": "1200",
-    "name": "Certificates of Deposit",
-    "description": ""
+    "name": "Certificates of Deposit"
   },
   {
     "code": "1250",
-    "name": "Money Market Account",
-    "description": ""
+    "name": "Money Market Account"
   },
   {
     "code": "1300",
-    "name": "Accounts Receivable",
-    "description": ""
+    "name": "Accounts Receivable"
   },
   {
     "code": "1301",
-    "name": "Accounts Receivable - Wellness/Pre-Paid Plans",
-    "description": ""
+    "name": "Accounts Receivable - Wellness/Pre-Paid Plans"
   },
   {
     "code": "1305",
-    "name": "Allowance for Uncollectable Accounts",
-    "description": ""
+    "name": "Allowance for Uncollectable Accounts"
   },
   {
     "code": "1350",
-    "name": "Drugs and Medical Supply Inventory",
-    "description": ""
+    "name": "Drugs and Medical Supply Inventory"
   },
   {
     "code": "1400",
-    "name": "Employee Advances",
-    "description": ""
+    "name": "Employee Advances"
   },
   {
     "code": "1450",
-    "name": "Advances \u2013 Related Party",
-    "description": ""
+    "name": "Advances \u2013 Related Party"
   },
   {
     "code": "1500",
-    "name": "Note Receivable \u2013 Related Party",
-    "description": ""
+    "name": "Note Receivable \u2013 Related Party"
   },
   {
     "code": "1590",
-    "name": "Note Receivable \u2013 Other",
-    "description": ""
+    "name": "Note Receivable \u2013 Other"
   },
   {
     "code": "1600",
-    "name": "Prepaid Expenses",
-    "description": ""
+    "name": "Prepaid Expenses"
   },
   {
     "code": "1800",
-    "name": "Deposits for New Equipment",
-    "description": ""
+    "name": "Deposits for New Equipment"
   },
   {
     "code": "1850",
-    "name": "Construction In Progress",
-    "description": ""
+    "name": "Construction In Progress"
   },
   {
     "code": "2000",
-    "name": "Professional Medical Equipment",
-    "description": ""
+    "name": "Professional Medical Equipment"
   },
   {
     "code": "2050",
-    "name": "Computer Hardware",
-    "description": ""
+    "name": "Computer Hardware"
   },
   {
     "code": "2100",
-    "name": "Office Equipment, Furniture & Fixtures",
-    "description": ""
+    "name": "Office Equipment, Furniture & Fixtures"
   },
   {
     "code": "2150",
-    "name": "Practice Vehicles",
-    "description": ""
+    "name": "Practice Vehicles"
   },
   {
     "code": "2200",
-    "name": "Leasehold/Building Improvements",
-    "description": ""
+    "name": "Leasehold/Building Improvements"
   },
   {
     "code": "2300",
-    "name": "Buildings",
-    "description": ""
+    "name": "Buildings"
   },
   {
     "code": "2350",
-    "name": "Land Improvements",
-    "description": ""
+    "name": "Land Improvements"
   },
   {
     "code": "2400",
-    "name": "Land",
-    "description": ""
+    "name": "Land"
   },
   {
     "code": "2450",
-    "name": "Accumulated Depreciation",
-    "description": ""
+    "name": "Accumulated Depreciation"
   },
   {
     "code": "2500",
-    "name": "Computer Software",
-    "description": ""
+    "name": "Computer Software"
   },
   {
     "code": "2520",
-    "name": "Goodwill",
-    "description": ""
+    "name": "Goodwill"
   },
   {
     "code": "2560",
-    "name": "Covenant Not to Compete",
-    "description": ""
+    "name": "Covenant Not to Compete"
   },
   {
     "code": "2580",
-    "name": "Organizational & Startup Costs",
-    "description": ""
+    "name": "Organizational & Startup Costs"
   },
   {
     "code": "2585",
-    "name": "Loan Costs",
-    "description": ""
+    "name": "Loan Costs"
   },
   {
     "code": "2599",
-    "name": "Accumulated Amortization",
-    "description": ""
+    "name": "Accumulated Amortization"
   },
   {
     "code": "2600",
-    "name": "Note Receivable Long Term Portion",
-    "description": ""
+    "name": "Note Receivable Long Term Portion"
   },
   {
     "code": "2700",
-    "name": "Refundable Deposits",
-    "description": ""
+    "name": "Refundable Deposits"
   },
   {
     "code": "2850",
-    "name": "Other Assets",
-    "description": ""
+    "name": "Other Assets"
   },
   {
     "code": "3000",
-    "name": "Accounts Payable",
-    "description": ""
+    "name": "Accounts Payable"
   },
   {
     "code": "3010",
-    "name": "Credit Cards Payable",
-    "description": ""
+    "name": "Credit Cards Payable"
   },
   {
     "code": "3015",
-    "name": "Payable to VCP - Wellness Plan Pass-Through",
-    "description": ""
+    "name": "Payable to VCP - Wellness Plan Pass-Through"
   },
   {
     "code": "3020",
-    "name": "Line of Credit",
-    "description": ""
+    "name": "Line of Credit"
   },
   {
     "code": "3030",
-    "name": "Current Portion of Long Term Loans & Capital Leases Payable",
-    "description": ""
+    "name": "Current Portion of Long Term Loans & Capital Leases Payable"
   },
   {
     "code": "3050",
-    "name": "Loan Payable \u2013 Related Party",
-    "description": ""
+    "name": "Loan Payable \u2013 Related Party"
   },
   {
     "code": "3055",
-    "name": "Unearned Revenue",
-    "description": ""
+    "name": "Unearned Revenue"
   },
   {
     "code": "3060",
-    "name": "Deferred Liability - WellnessPre-Paid Plans",
-    "description": ""
+    "name": "Deferred Liability - WellnessPre-Paid Plans"
   },
   {
     "code": "3110",
-    "name": "Payroll Tax Payable",
-    "description": ""
+    "name": "Payroll Tax Payable"
   },
   {
     "code": "3140",
-    "name": "Workers Compensation Payable",
-    "description": ""
+    "name": "Workers Compensation Payable"
   },
   {
     "code": "3150",
-    "name": "Accrued Payroll and Bonuses",
-    "description": ""
+    "name": "Accrued Payroll and Bonuses"
   },
   {
     "code": "3160",
-    "name": "Accrued Payroll Taxes",
-    "description": ""
+    "name": "Accrued Payroll Taxes"
   },
   {
     "code": "3170",
-    "name": "Employer Retirement Plan Contribution Payable",
-    "description": ""
+    "name": "Employer Retirement Plan Contribution Payable"
   },
   {
     "code": "3200",
-    "name": "Employee Payroll Tax Withholding Payable",
-    "description": ""
+    "name": "Employee Payroll Tax Withholding Payable"
   },
   {
     "code": "3260",
-    "name": "Employee Withholding Payable",
-    "description": ""
+    "name": "Employee Withholding Payable"
   },
   {
     "code": "3400",
-    "name": "Sales & Use Tax Payable",
-    "description": ""
+    "name": "Sales & Use Tax Payable"
   },
   {
     "code": "3420",
-    "name": "Accrued Property Tax",
-    "description": ""
+    "name": "Accrued Property Tax"
   },
   {
     "code": "3500",
-    "name": "Corporate Income Tax Payable",
-    "description": ""
+    "name": "Corporate Income Tax Payable"
   },
   {
     "code": "3800",
-    "name": "Long Term Portion of Loans & Capital Lease Payable",
-    "description": ""
+    "name": "Long Term Portion of Loans & Capital Lease Payable"
   },
   {
     "code": "4000",
-    "name": "Common Stock",
-    "description": ""
+    "name": "Common Stock"
   },
   {
     "code": "4010",
-    "name": "Partner's Capital - Partner Two",
-    "description": ""
+    "name": "Partner's Capital - Partner Two"
   },
   {
     "code": "4100",
-    "name": "Additional Paid In Capital",
-    "description": ""
+    "name": "Additional Paid In Capital"
   },
   {
     "code": "4200",
-    "name": "Retained Earnings /(Deficit)",
-    "description": ""
+    "name": "Retained Earnings /(Deficit)"
   },
   {
     "code": "4300",
-    "name": "Distributions/Dividends/Draws",
-    "description": ""
+    "name": "Distributions/Dividends/Draws"
   },
   {
     "code": "4400",
-    "name": "Treasury Stock",
-    "description": ""
+    "name": "Treasury Stock"
   },
   {
     "code": "5000",
@@ -356,7 +294,7 @@
   },
   {
     "code": "5060",
-    "name": "Behavior Services Revenue",
+    "name": "Behavior Service Revenue",
     "description": "Behavior wellness, separation anxiety, aggression, destructive behavior modification"
   },
   {
@@ -386,7 +324,7 @@
   },
   {
     "code": "5105",
-    "name": "FDA Prescription Meds Revenue",
+    "name": "FDA Prescription Meds, Pill, Cap, Liquid, Etc. Revenue",
     "description": "Oral/transdermal FDA approved medications, sublingual drops"
   },
   {
@@ -466,7 +404,7 @@
   },
   {
     "code": "5405",
-    "name": "CT Scan Services Revenue",
+    "name": "CT Services Revenue",
     "description": "Computed tomography imaging"
   },
   {
@@ -516,7 +454,7 @@
   },
   {
     "code": "5801",
-    "name": "OTC Products, Shampoos, & Nutraceuticals Revenue",
+    "name": "OTC Products, Shampoos, & Nutraceutical Revenue",
     "description": "Vitamins, Chinese herbs, homeopathic products, dental treats, probiotics, Elizabethan collars"
   },
   {
@@ -526,7 +464,7 @@
   },
   {
     "code": "5803",
-    "name": "Non-FDA Flea and Tick Control Product Revenue",
+    "name": "Non-FDA Flea & Tick Control Product Revenue",
     "description": "Frontline, Seresto, Capstar, Vectra, dips, sprays, powders"
   },
   {
@@ -548,6 +486,14 @@
     "code": "5875",
     "name": "Wellness/Pre-Paid  Plan Revenue",
     "description": "Wellness/Pre-Paid Plans Revenue - wellness plan payments, enrollment fees, monthly payments"
+  },
+  {
+    "code": "5880",
+    "name": "Wellness/Pre-Paid Plan Revenue"
+  },
+  {
+    "code": "5885",
+    "name": "Wellness/Pre-Paid Plan Discounts"
   },
   {
     "code": "5900",
@@ -575,9 +521,37 @@
     "description": "Professional Services Costs - consumable supplies for treating patients, vaccines, catheters, syringes, bandage supplies, microchips, euthanasia solutions"
   },
   {
+    "code": "6001",
+    "name": "Vaccine Costs"
+  },
+  {
+    "code": "6020",
+    "name": "Examination, Hospitalization, & Treatment Costs"
+  },
+  {
+    "code": "6025",
+    "name": "Fluid Therapy Costs"
+  },
+  {
+    "code": "6030",
+    "name": "Diagnostic Services Costs"
+  },
+  {
+    "code": "6040",
+    "name": "Rehabilitation Costs"
+  },
+  {
     "code": "6050",
-    "name": "Mortuary/Cremation Costs",
+    "name": "Animal Disposal/Mortuary Costs",
     "description": "Cremation service costs, urns, burial supplies, memorial service expenses, pet cemetery fees"
+  },
+  {
+    "code": "6095",
+    "name": "Medical Waste Disposal Costs"
+  },
+  {
+    "code": "6099",
+    "name": "Large Animal Costs"
   },
   {
     "code": "6100",
@@ -585,9 +559,45 @@
     "description": "Pharmacy Costs - FDA prescription medications, dispensing supplies, containers, labels"
   },
   {
+    "code": "6105",
+    "name": "FDA Prescription Meds, Pill, Cap, Liquid, Etc. Costs"
+  },
+  {
+    "code": "6110",
+    "name": "Injection Costs"
+  },
+  {
+    "code": "6115",
+    "name": "FDA Prescription Flea/Tick Non-injectable Prevention Product Costs"
+  },
+  {
+    "code": "6120",
+    "name": "FDA Prescription HW Non-injectable Prevention Product Costs"
+  },
+  {
+    "code": "6125",
+    "name": "Injectable Parasite Prevention Product Costs"
+  },
+  {
+    "code": "6130",
+    "name": "Internet Pharmacy Costs"
+  },
+  {
     "code": "6200",
     "name": "Dietary Product Costs",
     "description": "Dietary Product Costs - therapeutic diets, retail diets, internet diet costs"
+  },
+  {
+    "code": "6201",
+    "name": "Therapeutic Diet Product Costs"
+  },
+  {
+    "code": "6202",
+    "name": "Retail Diet Product Costs"
+  },
+  {
+    "code": "6203",
+    "name": "Internet Diet Costs"
   },
   {
     "code": "6300",
@@ -595,9 +605,41 @@
     "description": "Laboratory Costs - lab supplies, reagents, reference lab charges, histopathology"
   },
   {
+    "code": "6301",
+    "name": "In-House Lab Costs"
+  },
+  {
+    "code": "6302",
+    "name": "Outside (Reference) Lab Costs"
+  },
+  {
     "code": "6400",
     "name": "Imaging Costs",
     "description": "Imaging Costs - radiographic film, processing chemicals, contrast materials, lead shields, OFA/PennHIP fees"
+  },
+  {
+    "code": "6403",
+    "name": "X-Ray Costs"
+  },
+  {
+    "code": "6404",
+    "name": "Dental X-Ray Costs"
+  },
+  {
+    "code": "6405",
+    "name": "CT Costs"
+  },
+  {
+    "code": "6410",
+    "name": "Ultrasound Costs"
+  },
+  {
+    "code": "6415",
+    "name": "MRI Costs"
+  },
+  {
+    "code": "6420",
+    "name": "Imaging Consultation Costs"
   },
   {
     "code": "6500",
@@ -618,6 +660,22 @@
     "code": "6800",
     "name": "Ancillary Products & Services Costs",
     "description": "Ancillary Service & Product Costs - OTC products, pet supplies, flea/tick products, internet ancillary costs"
+  },
+  {
+    "code": "6801",
+    "name": "OTC Products, Shampoos, & Nutraceutical Costs"
+  },
+  {
+    "code": "6802",
+    "name": "Pet Supply Costs"
+  },
+  {
+    "code": "6803",
+    "name": "Non-FDA Flea/Tick Control Costs"
+  },
+  {
+    "code": "6804",
+    "name": "Internet Ancillary Retail Sales Costs"
   },
   {
     "code": "6825",
@@ -730,9 +788,45 @@
     "description": "Employer Payroll Taxes - FICA, federal/state unemployment, other employer payroll taxes"
   },
   {
+    "code": "7210",
+    "name": "FICA Tax Expense \u2013 Employer\u2019s Portion"
+  },
+  {
+    "code": "7220",
+    "name": "Federal Unemployment Tax Expense"
+  },
+  {
+    "code": "7230",
+    "name": "State Unemployment Tax Expense"
+  },
+  {
+    "code": "7250",
+    "name": "Other Employer Payroll Tax Expense"
+  },
+  {
     "code": "7300",
     "name": "Employee Benefit Program Expense",
     "description": "Employee Benefit Program - group health, dental, vision, life insurance, EAP"
+  },
+  {
+    "code": "7301",
+    "name": "Group Health Insurance Premium Expense"
+  },
+  {
+    "code": "7302",
+    "name": "S Corporation Shareholder Health Insurance Premium"
+  },
+  {
+    "code": "7303",
+    "name": "Group Dental, Vision and Other Insurance Premium Expense"
+  },
+  {
+    "code": "7304",
+    "name": "Group Disability Insurance Premium"
+  },
+  {
+    "code": "7305",
+    "name": "Group Term Life Insurance Premium"
   },
   {
     "code": "7310",
@@ -755,9 +849,37 @@
     "description": "Continuing Education Registration - webinars, seminars, conferences, licensure compliance"
   },
   {
+    "code": "7361",
+    "name": "Meeting/Course Registration Fees"
+  },
+  {
+    "code": "7362",
+    "name": "Business & Professional Book, Journals, VIN subscriptions"
+  },
+  {
+    "code": "7363",
+    "name": "Staff Training Fees and Costs"
+  },
+  {
     "code": "7365",
     "name": "Travel and Lodging Expense",
     "description": "Travel and Lodging - CE-related travel, airfare, lodging, transportation, mileage"
+  },
+  {
+    "code": "7366",
+    "name": "Air Fare"
+  },
+  {
+    "code": "7367",
+    "name": "Lodging"
+  },
+  {
+    "code": "7368",
+    "name": "Transportation"
+  },
+  {
+    "code": "7369",
+    "name": "Mileage Reimbursement (CE Travel)"
   },
   {
     "code": "7400",
@@ -820,9 +942,33 @@
     "description": "Maintenance - facility and equipment maintenance to prevent failure"
   },
   {
+    "code": "7521",
+    "name": "Medical Equipment Maintenance"
+  },
+  {
+    "code": "7522",
+    "name": "IT and Office Equipment Maintenance"
+  },
+  {
+    "code": "7523",
+    "name": "Facility Maintenance"
+  },
+  {
     "code": "7530",
     "name": "Service Contracts",
     "description": "Service Contracts - security, landscaping, snow removal, HVAC maintenance"
+  },
+  {
+    "code": "7531",
+    "name": "Medical Equipment Service Contracts"
+  },
+  {
+    "code": "7532",
+    "name": "IT and Office Equipment Service Contracts"
+  },
+  {
+    "code": "7533",
+    "name": "Facility Service Contract"
   },
   {
     "code": "7540",
@@ -833,6 +979,18 @@
     "code": "7570",
     "name": "Repairs",
     "description": "Repairs - facility and equipment repairs to restore broken property"
+  },
+  {
+    "code": "7571",
+    "name": "Medical Equipment Repairs"
+  },
+  {
+    "code": "7572",
+    "name": "IT and Office Equipment Repairs"
+  },
+  {
+    "code": "7573",
+    "name": "Facility Repairs"
   },
   {
     "code": "7580",
@@ -860,9 +1018,33 @@
     "description": "Utility Services - electricity, natural gas, sewer, water"
   },
   {
+    "code": "7661",
+    "name": "Electricity"
+  },
+  {
+    "code": "7662",
+    "name": "Natural Gas/Fuel Oil/Propane Gas"
+  },
+  {
+    "code": "7663",
+    "name": "Sewer"
+  },
+  {
+    "code": "7664",
+    "name": "Water"
+  },
+  {
     "code": "7670",
     "name": "Telephone Services",
     "description": "Telephone Services - landline, fax, telephone expenses"
+  },
+  {
+    "code": "7671",
+    "name": "Cellular Phone Service"
+  },
+  {
+    "code": "7672",
+    "name": "Landline Phone Service"
   },
   {
     "code": "7675",
@@ -885,14 +1067,154 @@
     "description": "Administrative Expenses - licenses, permits, taxes, dues, office expenses"
   },
   {
+    "code": "7705",
+    "name": "Licenses & Permits"
+  },
+  {
+    "code": "7710",
+    "name": "Use Tax Paid"
+  },
+  {
+    "code": "7715",
+    "name": "Franchise Tax"
+  },
+  {
+    "code": "7720",
+    "name": "Other Tax"
+  },
+  {
+    "code": "7725",
+    "name": "Veterinary & Professional Dues"
+  },
+  {
+    "code": "7730",
+    "name": "Client Education Material"
+  },
+  {
+    "code": "7735",
+    "name": "Business Gifts and Flowers"
+  },
+  {
+    "code": "7740",
+    "name": "Charitable Contributions"
+  },
+  {
+    "code": "7745",
+    "name": "Computer Supplies"
+  },
+  {
+    "code": "7747",
+    "name": "Software as a Service Fees"
+  },
+  {
+    "code": "7750",
+    "name": "Office Supplies"
+  },
+  {
+    "code": "7755",
+    "name": "Postage"
+  },
+  {
+    "code": "7760",
+    "name": "Printing"
+  },
+  {
+    "code": "7765",
+    "name": "Accounting Fees"
+  },
+  {
+    "code": "7770",
+    "name": "Bookkeeping Services"
+  },
+  {
+    "code": "7775",
+    "name": "Payroll Service Fees"
+  },
+  {
+    "code": "7780",
+    "name": "Employee Benefits Administration"
+  },
+  {
+    "code": "7785",
+    "name": "Legal Services"
+  },
+  {
+    "code": "7790",
+    "name": "Business Consultation"
+  },
+  {
     "code": "7800",
     "name": "Adverrtising & Promotion Expense Account Series",
     "description": "Advertising & Promotion Expenses - directory advertising, web ads, billboards, direct mail, business cards, sponsorships"
   },
   {
+    "code": "7801",
+    "name": "Yellow Page Advertising"
+  },
+  {
+    "code": "7802",
+    "name": "Website Maintenance"
+  },
+  {
+    "code": "7803",
+    "name": "Internet Advertising"
+  },
+  {
+    "code": "7804",
+    "name": "Direct Mailing"
+  },
+  {
+    "code": "7805",
+    "name": "Client Reminders"
+  },
+  {
+    "code": "7806",
+    "name": "Memorial Contributions"
+  },
+  {
+    "code": "7808",
+    "name": "Sponsored Events"
+  },
+  {
+    "code": "7809",
+    "name": "Marketing Consultant Fees"
+  },
+  {
+    "code": "7810",
+    "name": "Advertising & Promotion - Other"
+  },
+  {
     "code": "7900",
     "name": "Fee Income Collection Expense Account Series",
     "description": "Fee Income Collection Expenses - bank fees, credit card fees, collection agency fees, bad debts"
+  },
+  {
+    "code": "7905",
+    "name": "Bank Charges and Service Fees"
+  },
+  {
+    "code": "7910",
+    "name": "Credit Card Merchant Service Fees"
+  },
+  {
+    "code": "7911",
+    "name": "Wellness/Pre-Paid Plan Service Fees"
+  },
+  {
+    "code": "7915",
+    "name": "Third Party Financing Service Fees"
+  },
+  {
+    "code": "7920",
+    "name": "Collection Fees"
+  },
+  {
+    "code": "7930",
+    "name": "Bad Debts"
+  },
+  {
+    "code": "7940",
+    "name": "Returned Check Fees"
   },
   {
     "code": "8000",
@@ -976,7 +1298,6 @@
   },
   {
     "code": "9900",
-    "name": "Ask My Accountant",
-    "description": ""
+    "name": "Ask My Accountant"
   }
 ]

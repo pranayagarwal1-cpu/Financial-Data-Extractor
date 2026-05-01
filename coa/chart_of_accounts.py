@@ -2,8 +2,10 @@
 Chart of Accounts reference data for VMG/AAHA veterinary accounting.
 
 Loaded from coa_data.json which is generated from:
-- VMGAAHA_COA_Excel_Version_2025.xlsx (account codes and names)
-- 2025-DATALINK-Entry-Revenue-and-Expense-Field-Definitions-10-1-25.pdf (descriptions)
+- VMGAAHA_COA_Excel_Version_2025.xlsx (primary source — all account codes and names)
+- 2025-DATALINK-Entry-Revenue-and-Expense-Field-Definitions-10-1-25.pdf (descriptions, merged where available)
+
+The Excel file is the authoritative source for the complete account list.
 """
 
 import json
