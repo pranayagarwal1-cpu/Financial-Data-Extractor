@@ -73,13 +73,14 @@ def parse_statement_types(statement_str: str) -> list:
     return types if types else list(StatementType)
 
 
-def process_single_pdf(pdf_path: str, statement_types: list = None) -> dict:
+def process_single_pdf(pdf_path: str, statement_types: list = None, enable_categorization: bool = True) -> dict:
     """
     Process a single PDF file through the multi-agent workflow.
 
     Args:
         pdf_path: Path to the PDF file
         statement_types: Optional list of StatementType to extract
+        enable_categorization: Whether to run CoA categorization after extraction
 
     Returns:
         Final state from the workflow
@@ -97,7 +98,8 @@ def process_single_pdf(pdf_path: str, statement_types: list = None) -> dict:
     initial_state = {
         "input_pdf": pdf_path,
         "statement_types": statement_types or list(StatementType),
-        "retry_count": 0
+        "retry_count": 0,
+        "enable_categorization": enable_categorization,
     }
 
     try:
@@ -115,7 +117,7 @@ def process_single_pdf(pdf_path: str, statement_types: list = None) -> dict:
         return {"error_message": str(e)}
 
 
-def process_folder(folder_path: str, statement_types: list = None, pattern: str = "*.pdf") -> dict:
+def process_folder(folder_path: str, statement_types: list = None, pattern: str = "*.pdf", enable_categorization: bool = True) -> dict:
     """
     Process all PDFs in a folder.
 
@@ -123,6 +125,7 @@ def process_folder(folder_path: str, statement_types: list = None, pattern: str 
         folder_path: Path to folder containing PDFs
         statement_types: Optional list of StatementType to extract
         pattern: Glob pattern for matching files
+        enable_categorization: Whether to run CoA categorization after extraction
 
     Returns:
         Dict with summary of processed files
@@ -156,7 +159,7 @@ def process_folder(folder_path: str, statement_types: list = None, pattern: str 
         print(f"\n[{i}/{len(pdf_files)}] Processing: {pdf_file.name}")
         print("-" * 40)
 
-        final_state = process_single_pdf(str(pdf_file), statement_types)
+        final_state = process_single_pdf(str(pdf_file), statement_types, enable_categorization=enable_categorization)
 
         if final_state.get("output_files"):
             results["processed"].append({
@@ -223,6 +226,7 @@ Examples:
   python main.py --pdf input/file.pdf --statements balance_sheet  # Extract only BS
   python main.py --clean                                      # Clean temp files
   python main.py --model qwen3.5:9b                           # Use specific model
+  python main.py --pdf input/file.pdf --no-categorization     # Extract without CoA mapping
         """
     )
 
@@ -265,6 +269,12 @@ Examples:
         action="store_true",
         help="Clean up temporary files"
     )
+    parser.add_argument(
+        "--no-categorization",
+        action="store_true",
+        default=False,
+        help="Skip CoA categorization (extract only, no account mapping)"
+    )
 
     args = parser.parse_args()
 
@@ -299,12 +309,17 @@ Examples:
     print()
 
     # Determine what to process
+    enable_cat = not args.no_categorization
+    if not enable_cat:
+        print("🏷️  CoA categorization: DISABLED")
+        print()
+
     if args.pdf:
-        final_state = process_single_pdf(args.pdf, statement_types)
+        final_state = process_single_pdf(args.pdf, statement_types, enable_categorization=enable_cat)
         if final_state.get("error_message"):
             sys.exit(1)
     elif args.folder:
-        results = process_folder(args.folder, statement_types)
+        results = process_folder(args.folder, statement_types, enable_categorization=enable_cat)
         if results.get("error_message") or results["failed"]:
             sys.exit(1)
     else:
@@ -313,7 +328,7 @@ Examples:
             print(f"❌ Input directory not found: {INPUT_DIR}")
             sys.exit(1)
 
-        results = process_folder(str(INPUT_DIR), statement_types)
+        results = process_folder(str(INPUT_DIR), statement_types, enable_categorization=enable_cat)
         if results.get("error_message") or results["failed"]:
             sys.exit(1)
 

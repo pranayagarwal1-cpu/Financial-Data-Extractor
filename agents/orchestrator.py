@@ -151,13 +151,16 @@ def orchestrator_node(state: dict) -> dict:
 
 def should_retry(state: dict) -> str:
     """
-    Conditional edge function to determine if re-extraction is needed.
+    Conditional edge function to determine next step after evaluator.
 
     Returns:
-        'extractor' to retry, 'categorizer' to proceed to categorization
+        'extractor' to retry extraction,
+        'categorizer' to proceed to categorization (if enabled),
+        'save_outputs' to skip categorization and save directly
     """
     evaluation = state.get("evaluation_result", {})
     retry_count = state.get("retry_count", 0)
+    enable_categorization = state.get("enable_categorization", True)
 
     # Check if ALL statements passed evaluation
     all_passed = all(
@@ -168,7 +171,10 @@ def should_retry(state: dict) -> str:
     if all_passed:
         logging.info("All statements passed evaluation")
         print("✅ All statements passed evaluation!")
-        return "categorizer"  # Proceed to categorization
+        if enable_categorization:
+            return "categorizer"
+        print("📦 Categorization skipped — saving extracted data directly.")
+        return "save_outputs"
 
     if retry_count < Config.MAX_RETRIES:
         logging.warning(f"Extraction quality insufficient, retrying ({retry_count + 1}/{Config.MAX_RETRIES})")
@@ -176,8 +182,11 @@ def should_retry(state: dict) -> str:
         return "extractor"
 
     logging.error("Max retries reached")
-    print("❌ Max retries reached. Proceeding to categorization.")
-    return "categorizer"  # Even with failed evaluation, try to categorize what we have
+    if enable_categorization:
+        print("❌ Max retries reached. Proceeding to categorization.")
+        return "categorizer"
+    print("❌ Max retries reached. Saving without categorization.")
+    return "save_outputs"
 
 
 def should_retry_categorization(state: dict) -> str:

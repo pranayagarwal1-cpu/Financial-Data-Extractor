@@ -22,6 +22,7 @@ class AgentState(TypedDict, total=False):
         error_message: Error message if any step fails
         log_file: Path to the log file for this run
         run_id: Unique identifier for this extraction run (for observability)
+        enable_categorization: Whether to run CoA categorization after extraction
     """
     input_pdf: str
     statement_types: List[StatementType]
@@ -38,3 +39,4 @@ class AgentState(TypedDict, total=False):
     error_message: Optional[str]
     log_file: Optional[str]
     run_id: Optional[str]
+    enable_categorization: bool

@@ -41,7 +41,7 @@ def get_output_files_for_pdf(pdf_name: str):
     return files
 
 
-def process_pdf(pdf_path: str, statement_types: list, log_callback=None):
+def process_pdf(pdf_path: str, statement_types: list, log_callback=None, enable_categorization: bool = True):
     """Process a PDF through the workflow and return results with logs."""
     from utils.observability import get_observability
     obs = get_observability()
@@ -54,7 +54,8 @@ def process_pdf(pdf_path: str, statement_types: list, log_callback=None):
     initial_state = {
         "input_pdf": pdf_path,
         "statement_types": statement_types,
-        "retry_count": 0
+        "retry_count": 0,
+        "enable_categorization": enable_categorization,
     }
 
     if log_callback:
@@ -173,6 +174,15 @@ with st.sidebar:
     )
 
     st.session_state["selected_statements"] = selected_statements
+
+    # CoA categorization toggle
+    st.header("🏷️ CoA Categorization")
+    enable_categorization = st.toggle(
+        "Enable Chart of Accounts categorization",
+        value=True,
+        help="Map extracted line items to veterinary practice CoA codes. Adds ~5–15 min per income statement."
+    )
+    st.session_state["enable_categorization"] = enable_categorization
 
     st.divider()
 
@@ -313,7 +323,12 @@ if "uploaded_pdfs" in st.session_state:
                 # Step 3: Extract data
                 add_log(f"🤖 Extracting data from {pdf_name}...")
 
-                final_state = process_pdf(pdf_path, selected_statements, log_callback=add_log)
+                final_state = process_pdf(
+                    pdf_path,
+                    selected_statements,
+                    log_callback=add_log,
+                    enable_categorization=st.session_state.get("enable_categorization", True),
+                )
 
                 # Step 4: Validate
                 add_log(f"⚖️ Validating extraction quality for {pdf_name}...")

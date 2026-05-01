@@ -95,7 +95,8 @@ def create_workflow(statement_types: list = None) -> StateGraph:
         should_retry,
         {
             "extractor": "extractor",
-            "categorizer": "categorizer"  # Pass to categorizer if evaluation passes
+            "categorizer": "categorizer",  # Pass to categorizer if evaluation passes and enabled
+            "save_outputs": "save_outputs",  # Skip categorization if disabled
         }
     )
 
