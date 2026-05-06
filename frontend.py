@@ -187,7 +187,7 @@ with st.sidebar:
     st.divider()
 
     # Clean all files button
-    if st.button("🗑️ Clean All Files", use_container_width=True):
+    if st.button("🗑️ Clean All Files", width="stretch"):
         files_deleted = 0
 
         def clean_directory(directory: Path) -> int:
@@ -225,7 +225,7 @@ with st.sidebar:
 
     # Metrics Dashboard Link
     st.header("📈 Analytics")
-    if st.button("📊 View Metrics Dashboard", use_container_width=True):
+    if st.button("📊 View Metrics Dashboard", width="stretch"):
         st.session_state["show_metrics"] = not st.session_state.get("show_metrics", False)
 
 # -----------------------------------------------------------------------------
@@ -295,7 +295,7 @@ if "uploaded_pdfs" in st.session_state:
         st.caption(f"📊 Extracting: {', '.join([statement_options[s] for s in selected_statements])}")
         st.caption(f"📁 Files to process: {pdf_count}")
 
-    process_btn = st.button("🚀 Extract Statements", type="primary", use_container_width=True)
+    process_btn = st.button("🚀 Extract Statements", type="primary", width="stretch")
 
     if process_btn:
         if not selected_statements:
@@ -476,7 +476,7 @@ if st.session_state.get("processing_complete"):
                                         png_bytes = rasterize_page_to_png(pdf_path, page_num, dpi=150)
 
                                         if png_bytes:
-                                            st.image(png_bytes, caption=f"Page {page_num}", use_container_width=True)
+                                            st.image(png_bytes, caption=f"Page {page_num}", width="stretch")
 
                                         # Show statement pages indicator
                                         if pages_for_type:
@@ -489,7 +489,7 @@ if st.session_state.get("processing_complete"):
                                             Path(pdf_path).name,
                                             "application/pdf",
                                             key=f"view_pdf_{pdf_name}_{stmt_type.value}",
-                                            use_container_width=True
+                                            width="stretch"
                                         )
 
                                     with col2:
@@ -523,7 +523,7 @@ if st.session_state.get("processing_complete"):
 
                                                     if table_data:
                                                         df = pd.DataFrame(table_data)
-                                                        st.dataframe(df, use_container_width=True, hide_index=True)
+                                                        st.dataframe(df, width="stretch", hide_index=True)
 
                                     st.divider()
 
@@ -541,7 +541,7 @@ if st.session_state.get("processing_complete"):
                                         files["json"].name,
                                         "application/json",
                                         key=f"json_{pdf_name}_{st_type.value}",
-                                        use_container_width=True
+                                        width="stretch"
                                     )
                         with col2:
                             if files["excel"] and files["excel"].exists():
@@ -552,7 +552,7 @@ if st.session_state.get("processing_complete"):
                                         files["excel"].name,
                                         "application/vnd.ms-excel",
                                         key=f"excel_{pdf_name}_{st_type.value}",
-                                        use_container_width=True
+                                        width="stretch"
                                     )
 
                     # AI Evaluation
@@ -580,7 +580,7 @@ if st.session_state.get("processing_complete"):
                                         {"Criterion": k.replace("_", " ").title(), "Score": v}
                                         for k, v in scores.items()
                                     ])
-                                    st.dataframe(score_df, use_container_width=True, hide_index=True)
+                                    st.dataframe(score_df, width="stretch", hide_index=True)
 
                                     # Show feedback/reason for score
                                     feedback = eval_data.get("feedback", "")
@@ -599,7 +599,7 @@ if st.session_state.get("processing_complete"):
                             Path(pdf_path).name,
                             "application/pdf",
                             key=f"pdf_{pdf_name}",
-                            use_container_width=True
+                            width="stretch"
                         )
 
                     # -------------------------------------------------------------------------
@@ -629,7 +629,7 @@ if st.session_state.get("processing_complete"):
                                         {"Criterion": k.replace("_", " ").title(), "Score": v}
                                         for k, v in cat_scores.items()
                                     ])
-                                    st.dataframe(cat_score_df, use_container_width=True, hide_index=True)
+                                    st.dataframe(cat_score_df, width="stretch", hide_index=True)
 
                     # -------------------------------------------------------------------------
                     # Review & Correct (needs_review / low-confidence rows only)
@@ -696,7 +696,7 @@ if st.session_state.get("processing_complete"):
                                     "confidence": st.column_config.TextColumn("Confidence", disabled=True),
                                     "reasoning": st.column_config.TextColumn("Reasoning", disabled=True),
                                 },
-                                use_container_width=True,
+                                width="stretch",
                                 hide_index=True,
                                 key=f"review_editor_{pdf_name}"
                             )
@@ -772,7 +772,7 @@ if st.session_state.get("show_metrics", False):
             ]].copy()
             display_df.columns = ["Timestamp", "PDF", "Success", "Duration (s)", "LLM Calls", "Retries"]
             display_df["Timestamp"] = pd.to_datetime(display_df["Timestamp"]).dt.strftime("%Y-%m-%d %H:%M")
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            st.dataframe(display_df, width="stretch", hide_index=True)
 
         st.divider()
         st.subheader("📊 Trends")
