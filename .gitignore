@@ -96,3 +96,9 @@ models/
 # Practice-specific learned corrections (per-practice memory)
 memory/*.md
 !memory/_default.md
+
+# Documentation (optional for deployment)
+COA_CATEGORIZER_DESIGN.md
+CURRENT_SYSTEM_CAPABILITIES.md
+DEPLOYMENT.md
+PAYMENT_GUIDE.md
