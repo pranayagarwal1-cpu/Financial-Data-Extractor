@@ -347,6 +347,25 @@ def evaluator_node(state: dict) -> dict:
             print(f"   - Missing value ratio: {missing_ratio:.1%}")
             print(f"   - Numeric parseability: {numeric_score}/10 ({numeric_feedback})")
 
+            # Hard-fail: too many values are unparsable — LLM judge cannot add value here
+            if numeric_score < 5.0:
+                feedback = f"Numeric data largely unparsable: {numeric_feedback}"
+                print(f"   ❌ Pre-check FAIL: {feedback}")
+                logging.warning(f"{statement_type.value}: pre-check FAIL — {feedback}")
+                evaluation_results[statement_type] = {
+                    "passed": False,
+                    "feedback": feedback,
+                    "scores": {"format_validity": 0}
+                }
+                last_evaluation_feedback[statement_type] = feedback
+                obs.log_evaluation_score(
+                    statement_type=statement_type.value,
+                    score=0.0,
+                    details={"format_validity": 0},
+                    run_id=run_id,
+                )
+                continue
+
             # Get statement-specific prompt
             prompt = EVALUATION_PROMPTS[statement_type].format(
                 extracted_data=json.dumps(data, indent=2)

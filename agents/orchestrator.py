@@ -183,8 +183,8 @@ def should_retry(state: dict) -> str:
         print(f"⚠️  Extraction quality insufficient. Retrying ({retry_count + 1}/{Config.MAX_RETRIES})…")
         return "extractor"
 
-    logging.error("Max retries reached, extraction quality insufficient")
-    print("❌ Max retries reached. Saving raw extracted data without categorization.")
+    logging.error("Max retries reached. DELIBERATELY saving raw extracted data without categorization.")
+    print("❌ Max retries reached. DELIBERATELY saving raw extracted data without categorization.")
     return "save_outputs"
 
 
@@ -286,7 +286,9 @@ def save_outputs(state: dict) -> dict:
     obs.end_run(
         run_id=run_id,
         success=True,
-        retry_count=state.get("retry_count", 0)
+        retry_count=state.get("retry_count", 0),
+        cat_retry_count=state.get("cat_retry_count", 0),
+        review_queue_count=len(state.get("review_queue", [])),
     )
 
     return {"output_files": output_files, "run_id": run_id}

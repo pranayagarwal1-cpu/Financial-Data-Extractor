@@ -2,10 +2,11 @@
 Observability module for the financial statement extraction system.
 
 Provides:
-- Run-level metrics (timing, success/failure, retries)
+- Run-level metrics (timing, success/failure, retries, tokens, costs)
 - Structured JSON logging
-- LLM call tracking (duration, model, tokens)
+- LLM call tracking (duration, model, actual tokens, estimated cost)
 - Node-level timing instrumentation
+- Per-model token and cost breakdown
 """
 
 import json
@@ -17,6 +18,48 @@ from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field, asdict
 
 from config import Config
+
+
+# Cost per 1K tokens (USD) — update as pricing changes
+MODEL_COST_RATES: Dict[str, Dict[str, float]] = {
+    # Anthropic pricing (as of May 2026)
+    "claude-opus-4-7": {"input": 15.00, "output": 75.00},
+    "claude-sonnet-4-6": {"input": 3.00, "output": 15.00},
+    "claude-haiku-4-5": {"input": 0.25, "output": 1.25},
+    # Local Ollama models — $0 (compute cost not tracked here)
+    "qwen3.5": {"input": 0.0, "output": 0.0},
+    "qwen2.5": {"input": 0.0, "output": 0.0},
+    "llama3": {"input": 0.0, "output": 0.0},
+    "llama3.1": {"input": 0.0, "output": 0.0},
+    "mistral": {"input": 0.0, "output": 0.0},
+    "mixtral": {"input": 0.0, "output": 0.0},
+    "deepseek-r1": {"input": 0.0, "output": 0.0},
+}
+
+
+def _get_model_rate(model: str) -> Dict[str, float]:
+    """Look up cost rate for a model name (handles tag suffixes like ':397b-cloud')."""
+    base = model.split(":")[0].split("-")[0]  # e.g., "qwen3.5:397b-cloud" -> "qwen3.5"
+    # Try exact match first
+    if model in MODEL_COST_RATES:
+        return MODEL_COST_RATES[model]
+    # Try base name
+    if base in MODEL_COST_RATES:
+        return MODEL_COST_RATES[base]
+    # Try prefix match for claude models
+    if model.startswith("claude-"):
+        for key in MODEL_COST_RATES:
+            if model.startswith(key):
+                return MODEL_COST_RATES[key]
+    return {"input": 0.0, "output": 0.0}
+
+
+def _calculate_cost(prompt_tokens: int, completion_tokens: int, model: str) -> float:
+    """Calculate estimated cost in USD."""
+    rate = _get_model_rate(model)
+    input_cost = (prompt_tokens / 1000) * rate["input"]
+    output_cost = (completion_tokens / 1000) * rate["output"]
+    return round(input_cost + output_cost, 6)
 
 
 @dataclass
@@ -35,6 +78,21 @@ class RunMetrics:
     evaluation_scores: Dict[str, float] = field(default_factory=dict)
     error_message: Optional[str] = None
 
+    # Token tracking
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    total_tokens: int = 0
+
+    # Cost tracking
+    total_cost_usd: float = 0.0
+
+    # Per-model breakdown
+    model_usage: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+    # Categorization-specific
+    cat_retry_count: int = 0
+    review_queue_count: int = 0
+
 
 class Observability:
     """
@@ -44,7 +102,7 @@ class Observability:
         obs = Observability()
         run_id = obs.start_run(pdf_path, statement_types)
         obs.log_node_timing("orchestrator", 2.5)
-        obs.log_llm_call("qwen3.5", 1200, 100, 50)
+        obs.log_llm_call("claude-sonnet-4-6", 1200, prompt_tokens=100, completion_tokens=50)
         obs.end_run(run_id, success=True, retry_count=1)
     """
 
@@ -95,6 +153,7 @@ class Observability:
         return run_id
 
     def end_run(self, run_id: str, success: bool, retry_count: int = 0,
+                cat_retry_count: int = 0, review_queue_count: int = 0,
                 error_message: Optional[str] = None):
         """
         End an extraction run and save metrics.
@@ -102,7 +161,9 @@ class Observability:
         Args:
             run_id: The run ID from start_run()
             success: Whether the run completed successfully
-            retry_count: Number of retry attempts
+            retry_count: Number of extraction retry attempts
+            cat_retry_count: Number of categorization retry attempts
+            review_queue_count: Number of items flagged for human review
             error_message: Error message if failed
         """
         if run_id not in self._active_runs:
@@ -111,12 +172,17 @@ class Observability:
         metrics = self._active_runs[run_id]
         metrics.success = success
         metrics.retry_count = retry_count
+        metrics.cat_retry_count = cat_retry_count
+        metrics.review_queue_count = review_queue_count
         metrics.error_message = error_message
 
         # Calculate total duration
         if run_id in self._start_times:
             metrics.total_duration_sec = round(time.time() - self._start_times[run_id], 2)
             del self._start_times[run_id]
+
+        # Calculate derived totals
+        metrics.total_tokens = metrics.total_prompt_tokens + metrics.total_completion_tokens
 
         # Save metrics to JSON
         self._save_metrics(metrics)
@@ -128,7 +194,11 @@ class Observability:
             success=success,
             duration_sec=metrics.total_duration_sec,
             llm_calls=metrics.llm_calls,
-            retry_count=retry_count
+            retry_count=retry_count,
+            cat_retry_count=cat_retry_count,
+            review_queue_count=review_queue_count,
+            total_tokens=metrics.total_tokens,
+            total_cost_usd=metrics.total_cost_usd,
         )
 
         # Clean up
@@ -158,34 +228,69 @@ class Observability:
     def log_llm_call(self, model: str, duration_ms: float,
                      prompt: Optional[str] = None,
                      response: Optional[str] = None,
+                     prompt_tokens: Optional[int] = None,
+                     completion_tokens: Optional[int] = None,
                      run_id: Optional[str] = None):
         """
-        Log an LLM call with timing.
+        Log an LLM call with timing and token usage.
 
         Args:
             model: Model name used
             duration_ms: Call duration in milliseconds
             prompt: The prompt sent (optional, for debugging)
             response: The response received (optional, for debugging)
+            prompt_tokens: Actual or estimated prompt token count
+            completion_tokens: Actual or estimated completion token count
             run_id: Optional run ID to associate with
         """
         duration_sec = round(duration_ms / 1000, 3)
+
+        # Use actual counts if provided, otherwise estimate from text length
+        if prompt_tokens is None and prompt:
+            from utils.token_counter import count_tokens
+            prompt_tokens = count_tokens(prompt, model)
+        if completion_tokens is None and response:
+            from utils.token_counter import count_tokens
+            completion_tokens = count_tokens(response, model)
+
+        prompt_tokens = prompt_tokens or 0
+        completion_tokens = completion_tokens or 0
+        total_tokens = prompt_tokens + completion_tokens
+        cost = _calculate_cost(prompt_tokens, completion_tokens, model)
 
         if run_id and run_id in self._active_runs:
             metrics = self._active_runs[run_id]
             metrics.llm_calls += 1
             metrics.llm_total_duration_sec += duration_sec
+            metrics.total_prompt_tokens += prompt_tokens
+            metrics.total_completion_tokens += completion_tokens
+            metrics.total_cost_usd = round(metrics.total_cost_usd + cost, 6)
 
-        # Estimate tokens (rough: 4 chars per token)
-        prompt_tokens = len(prompt) // 4 if prompt else 0
-        response_tokens = len(response) // 4 if response else 0
+            # Per-model breakdown
+            if model not in metrics.model_usage:
+                metrics.model_usage[model] = {
+                    "calls": 0,
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                    "cost_usd": 0.0,
+                }
+            metrics.model_usage[model]["calls"] += 1
+            metrics.model_usage[model]["prompt_tokens"] += prompt_tokens
+            metrics.model_usage[model]["completion_tokens"] += completion_tokens
+            metrics.model_usage[model]["total_tokens"] += total_tokens
+            metrics.model_usage[model]["cost_usd"] = round(
+                metrics.model_usage[model]["cost_usd"] + cost, 6
+            )
 
         self.log_event(
             "llm_call",
             model=model,
             duration_ms=duration_ms,
             prompt_tokens=prompt_tokens,
-            response_tokens=response_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            cost_usd=cost,
             run_id=run_id
         )
 
@@ -267,7 +372,7 @@ class Observability:
             days: Number of days to include
 
         Returns:
-            Dict with aggregated statistics
+            Dict with aggregated statistics including tokens and costs
         """
         cutoff = datetime.now().timestamp() - (days * 24 * 3600)
 
@@ -286,6 +391,36 @@ class Observability:
         total_llm_calls = sum(r.get("llm_calls", 0) for r in runs)
         total_duration = sum(r.get("total_duration_sec", 0) for r in runs)
         total_retries = sum(r.get("retry_count", 0) for r in runs)
+        total_cat_retries = sum(r.get("cat_retry_count", 0) for r in runs)
+        total_review_queue = sum(r.get("review_queue_count", 0) for r in runs)
+
+        # Token stats
+        total_prompt_tokens = sum(r.get("total_prompt_tokens", 0) for r in runs)
+        total_completion_tokens = sum(r.get("total_completion_tokens", 0) for r in runs)
+        total_tokens = sum(r.get("total_tokens", 0) for r in runs)
+
+        # Cost stats
+        total_cost = sum(r.get("total_cost_usd", 0.0) for r in runs)
+
+        # Per-model aggregation
+        model_totals: Dict[str, Dict[str, Any]] = {}
+        for r in runs:
+            for model, usage in r.get("model_usage", {}).items():
+                if model not in model_totals:
+                    model_totals[model] = {
+                        "calls": 0,
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0,
+                        "cost_usd": 0.0,
+                    }
+                model_totals[model]["calls"] += usage.get("calls", 0)
+                model_totals[model]["prompt_tokens"] += usage.get("prompt_tokens", 0)
+                model_totals[model]["completion_tokens"] += usage.get("completion_tokens", 0)
+                model_totals[model]["total_tokens"] += usage.get("total_tokens", 0)
+                model_totals[model]["cost_usd"] = round(
+                    model_totals[model]["cost_usd"] + usage.get("cost_usd", 0.0), 6
+                )
 
         return {
             "total_runs": total,
@@ -293,7 +428,16 @@ class Observability:
             "avg_duration_sec": round(total_duration / total, 2) if total > 0 else 0,
             "total_llm_calls": total_llm_calls,
             "total_retries": total_retries,
-            "avg_retries_per_run": round(total_retries / total, 2) if total > 0 else 0
+            "total_cat_retries": total_cat_retries,
+            "avg_retries_per_run": round(total_retries / total, 2) if total > 0 else 0,
+            "total_review_queue": total_review_queue,
+            "avg_review_queue_per_run": round(total_review_queue / total, 2) if total > 0 else 0,
+            "total_prompt_tokens": total_prompt_tokens,
+            "total_completion_tokens": total_completion_tokens,
+            "total_tokens": total_tokens,
+            "total_cost_usd": round(total_cost, 4),
+            "avg_cost_per_run_usd": round(total_cost / total, 4) if total > 0 else 0,
+            "per_model_usage": model_totals,
         }
 
 

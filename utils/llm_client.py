@@ -5,6 +5,7 @@ Usage:
     from utils.llm_client import chat
     response = chat(model="qwen3.5", messages=[...], images=["page.jpg"])
     # response is always {"message": {"content": "..."}}
+    # response may include {"usage": {"prompt_tokens": N, "completion_tokens": M}}
 
 Model routing:
     - Names starting with "claude-" → Anthropic (e.g., claude-sonnet-4-6)
@@ -19,6 +20,7 @@ import base64
 
 from utils.ollama_client import chat as _ollama_chat
 from utils.anthropic_client import chat as _anthropic_chat
+from utils.token_counter import count_tokens
 
 
 def _is_anthropic_model(model: str) -> bool:
@@ -41,10 +43,31 @@ def chat(*, model: str, messages: list, **kwargs):
 
     Returns:
         Dict with {"message": {"content": str}} for consistent access.
+        May include {"usage": {"prompt_tokens": int, "completion_tokens": int}}.
     """
     if _is_anthropic_model(model):
-        return _anthropic_chat(model, _convert_messages_for_anthropic(messages), **kwargs)
-    return _ollama_chat(model=model, messages=messages, **kwargs)
+        response = _anthropic_chat(model, _convert_messages_for_anthropic(messages), **kwargs)
+        return response
+
+    # Ollama path — compute actual token counts since Ollama doesn't return them
+    response = _ollama_chat(model=model, messages=messages, **kwargs)
+
+    # Estimate tokens from prompt + response text
+    prompt_text = "\n".join(
+        str(m.get("content", "")) for m in messages
+    )
+    response_text = response.get("message", {}).get("content", "")
+
+    prompt_tokens = count_tokens(prompt_text, model)
+    completion_tokens = count_tokens(response_text, model)
+
+    response["usage"] = {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+    }
+
+    return response
 
 
 def _convert_messages_for_anthropic(messages: list) -> list:

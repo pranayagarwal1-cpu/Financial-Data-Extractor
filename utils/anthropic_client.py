@@ -1,4 +1,4 @@
-"""Anthropic client wrapper with connection reuse."""
+"""Anthropic client wrapper with connection reuse and usage tracking."""
 
 import os
 import atexit
@@ -25,11 +25,16 @@ atexit.register(_close_client)
 
 
 def chat(*, model: str, messages: list, **kwargs):
-    """Call Anthropic Messages API and return normalized response.
+    """Call Anthropic Messages API and return normalized response with usage.
 
     Normalizes the Anthropic Message object to a dict so callers can use:
         response["message"]["content"]
     regardless of backend.
+
+    Also includes usage metadata:
+        response["usage"]["prompt_tokens"]
+        response["usage"]["completion_tokens"]
+        response["usage"]["total_tokens"]
     """
     client = _get_client()
     max_tokens = kwargs.pop("max_tokens", 4096)
@@ -44,4 +49,17 @@ def chat(*, model: str, messages: list, **kwargs):
         for block in response.content:
             if getattr(block, "type", None) == "text":
                 text += block.text
-    return {"message": {"content": text}}
+
+    usage = getattr(response, "usage", None)
+    usage_dict = {}
+    if usage:
+        usage_dict = {
+            "prompt_tokens": getattr(usage, "input_tokens", 0),
+            "completion_tokens": getattr(usage, "output_tokens", 0),
+            "total_tokens": getattr(usage, "input_tokens", 0) + getattr(usage, "output_tokens", 0),
+        }
+
+    return {
+        "message": {"content": text},
+        "usage": usage_dict,
+    }
