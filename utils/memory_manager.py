@@ -13,6 +13,7 @@ Usage:
     maybe_promote_to_default(rule) -> bool
 """
 
+import csv
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,8 +43,6 @@ def _parse_memory_file(path: Path) -> List[CorrectionRule]:
         return rules
 
     content = path.read_text(encoding="utf-8")
-    # Find the markdown table
-    # Skip header rows, parse data rows
     lines = content.splitlines()
     in_table = False
     for line in lines:
@@ -52,8 +51,12 @@ def _parse_memory_file(path: Path) -> List[CorrectionRule]:
             in_table = True
             continue
         if in_table and stripped.startswith("|") and "Label" not in stripped:
-            parts = [p.strip() for p in stripped.split("|")]
-            parts = [p for p in parts if p]  # Remove empty from leading/trailing |
+            # Split on the " | " border pattern used by _serialize_rules.
+            # This is robust against bare '|' characters inside cells
+            # (e.g. "Foo|Bar") because only " space-pipe-space " is a border.
+            stripped = stripped[1:] if stripped.startswith("|") else stripped
+            stripped = stripped[:-1] if stripped.endswith("|") else stripped
+            parts = [cell.strip() for cell in stripped.split(" | ")]
             if len(parts) >= 5:
                 try:
                     count = int(parts[5]) if len(parts) > 5 else 1

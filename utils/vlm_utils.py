@@ -11,7 +11,7 @@ import re
 import json
 import time
 import logging
-from utils.ollama_client import chat
+from utils.llm_client import chat
 from enum import Enum
 from typing import Dict
 
@@ -258,7 +258,7 @@ def vlm_is_statement_page(image_path: str, statement_type: StatementType, model:
     return answer.startswith("YES")
 
 
-def vlm_extract_statement(image_path: str, statement_type: StatementType, model: str, run_id: str = None) -> dict:
+def vlm_extract_statement(image_path: str, statement_type: StatementType, model: str, run_id: str = None, prompt: str = None) -> dict:
     """
     Ask the VLM to extract a financial statement as structured JSON.
 
@@ -267,6 +267,7 @@ def vlm_extract_statement(image_path: str, statement_type: StatementType, model:
         statement_type: Type of statement to extract
         model: Ollama model name to use
         run_id: Optional run ID for observability tracking
+        prompt: Optional custom prompt (used for retry with feedback)
 
     Returns:
         Dict with keys: title, statement_type, periods, sections
@@ -275,11 +276,13 @@ def vlm_extract_statement(image_path: str, statement_type: StatementType, model:
     obs = get_observability()
     start_time = time.time()
 
+    actual_prompt = prompt or EXTRACTION_PROMPTS[statement_type]
+
     response = chat(
         model=model,
         messages=[{
             "role": "user",
-            "content": EXTRACTION_PROMPTS[statement_type],
+            "content": actual_prompt,
             "images": [image_path],
         }]
     )
@@ -288,7 +291,7 @@ def vlm_extract_statement(image_path: str, statement_type: StatementType, model:
     obs.log_llm_call(
         model=model,
         duration_ms=duration_ms,
-        prompt=EXTRACTION_PROMPTS[statement_type],
+        prompt=actual_prompt,
         response=response["message"]["content"],
         run_id=run_id
     )

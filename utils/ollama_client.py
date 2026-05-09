@@ -1,18 +1,22 @@
-"""Ollama client wrapper that creates fresh Client instances per call."""
+"""Ollama client wrapper with connection reuse."""
 
+import atexit
 import ollama
+
+# Reuse a single client per process to avoid HTTP connection setup/teardown
+# on every LLM call. The atexit hook ensures the underlying httpx client is
+# closed cleanly on process exit so the interpreter does not hang.
+_client = ollama.Client()
+
+
+def _close_client():
+    if hasattr(_client, "_client") and hasattr(_client._client, "close"):
+        _client._client.close()
+
+
+atexit.register(_close_client)
 
 
 def chat(*, model: str, messages: list, **kwargs):
-    """Call ollama.chat via a fresh Client instance.
-
-    Using a new Client per call avoids keeping idle HTTP connections open,
-    which prevents the Python process from hanging on exit.
-    """
-    client = ollama.Client()
-    try:
-        return client.chat(model=model, messages=messages, **kwargs)
-    finally:
-        # Close underlying httpx client if available
-        if hasattr(client, "_client") and hasattr(client._client, "close"):
-            client._client.close()
+    """Call ollama.chat via the shared Client instance."""
+    return _client.chat(model=model, messages=messages, **kwargs)

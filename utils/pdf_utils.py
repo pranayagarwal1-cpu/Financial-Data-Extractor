@@ -4,10 +4,21 @@ from pathlib import Path
 from typing import Optional, List
 
 
+def _validate_pdf_path(pdf_path: str) -> Path:
+    """Validate and resolve a PDF path to prevent command-injection issues."""
+    p = Path(pdf_path).resolve()
+    if not p.exists():
+        raise FileNotFoundError(f"PDF not found: {pdf_path}")
+    if not p.is_file():
+        raise ValueError(f"Not a regular file: {pdf_path}")
+    return p
+
+
 def get_page_count(pdf_path: str) -> int:
     """Get the number of pages in a PDF using pdfinfo."""
+    p = _validate_pdf_path(pdf_path)
     result = subprocess.run(
-        ["pdfinfo", pdf_path], capture_output=True, text=True
+        ["pdfinfo", str(p)], capture_output=True, text=True
     )
     for line in result.stdout.splitlines():
         if line.startswith("Pages:"):
@@ -28,10 +39,11 @@ def rasterize_page(pdf_path: str, page_num: int, out_prefix: str, dpi: int = 150
     Returns:
         Path to the generated JPEG image
     """
+    p = _validate_pdf_path(pdf_path)
     subprocess.run(
         ["pdftoppm", "-jpeg", "-r", str(dpi),
          "-f", str(page_num), "-l", str(page_num),
-         pdf_path, out_prefix],
+         str(p), out_prefix],
         check=True, capture_output=True
     )
     # pdftoppm zero-pads based on total page count – find the file

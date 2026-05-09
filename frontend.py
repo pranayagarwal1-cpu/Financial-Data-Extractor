@@ -560,9 +560,8 @@ if st.session_state.get("processing_complete"):
                     if eval_result:
                         st.markdown("##### ⚖️ AI Evaluation")
                         for st_type in StatementType:
-                            st_key = st_type.value
-                            if st_key in eval_result:
-                                eval_data = eval_result[st_key]
+                            eval_data = eval_result.get(st_type) or eval_result.get(st_type.value)
+                            if eval_data:
                                 st.markdown(f"**{statement_options[st_type]}**")
 
                                 passed = eval_data.get("passed", False)
@@ -609,7 +608,8 @@ if st.session_state.get("processing_complete"):
                     if cat_eval:
                         st.markdown("##### ⚖️ CoA Categorization Evaluation")
                         for st_key, cat_data_eval in cat_eval.items():
-                            if st_key == "income_statement":
+                            st_name = st_key.value if hasattr(st_key, 'value') else str(st_key)
+                            if st_name == "income_statement":
                                 cat_passed = cat_data_eval.get("passed", False)
                                 cat_scores = cat_data_eval.get("scores", {})
                                 cat_feedback = cat_data_eval.get("feedback", "")

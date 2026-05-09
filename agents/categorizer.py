@@ -1,26 +1,84 @@
 """
 Categorizer Agent - Maps P&L line items to Chart of Accounts.
 
-3-Layer Matching:
-1. Token-based exact match (fast, deterministic)
-2. LLM fallback for unmatched items (semantic matching with PDF definitions)
-3. Human review queue for low-confidence items
-
+LLM-based semantic matching with section-aware rules.
 Not in retry loop - runs once after extraction passes evaluation.
 """
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from utils.ollama_client import chat
+from utils.llm_client import chat
 
 from coa.chart_of_accounts import COA_ACCOUNTS, REVENUE_ACCOUNTS, DIRECT_COST_ACCOUNTS, OPERATING_EXPENSE_ACCOUNTS, serialize_coa_for_prompt
-from coa.matcher import MatchConfidence, MatchResult
 from config import Config
 from utils.vlm_utils import StatementType
+
+
+# Section header patterns - structural labels, not postable line items
+SECTION_HEADER_PATTERNS = [
+    r"^total\s+(revenue|expenses?|income|cost|sales)$",     # "Total Revenue", "Total Expenses"
+    r"^(revenue|expenses?|income|cost|sales)\s+total$",     # "Revenue Total"
+    r"^other\s+(revenue|expenses?|income)$",                 # "Other Revenue", "Other Expenses"
+    r"^(gross|net)\s+(profit|income|loss|revenue|margin)$", # "Gross Profit", "Net Income"
+    r"^operating\s+(expenses?|income|profit|revenue)$",     # "Operating Expenses"
+    r"^cost\s+of\s+(goods\ssold|revenue|sales)$",          # "Cost of Goods Sold"
+    r"^(revenue|expenses?|income)$",                         # Just "Revenue", "Expenses", "Income"
+    r"^(veterinary|practice)\s+(revenue|income|sales)$",    # "Veterinary Revenue"
+]
+
+
+def is_section_header(label: str) -> bool:
+    """
+    Check if a label is a structural section header rather than a postable line item.
+
+    Section headers are grouping labels that organize line items but don't
+    represent accounts themselves.
+    """
+    label_lower = label.lower().strip()
+
+    for pattern in SECTION_HEADER_PATTERNS:
+        if re.search(pattern, label_lower):
+            return True
+
+    if label_lower in {"revenue", "expenses", "income", "costs", "other income", "other expenses"}:
+        return True
+
+    return False
+
+
+# Ambiguity keywords that indicate the LLM itself acknowledged uncertainty
+_AMBIGUITY_KEYWORDS = [
+    "could be",
+    "would be",
+    "might be",
+    "may be",
+    "possibly",
+    "potentially",
+    "alternative",
+    "ambiguous",
+    "uncertain",
+    "unclear",
+    "not sure",
+    "difficult to",
+    "overlap",
+    "similar to",
+    "could also",
+    "could fit",
+    "could map",
+]
+
+
+def _reasoning_acknowledges_ambiguity(reasoning: str) -> bool:
+    """Check if LLM reasoning contains ambiguity signals."""
+    if not reasoning:
+        return False
+    reasoning_lower = reasoning.lower()
+    return any(kw in reasoning_lower for kw in _AMBIGUITY_KEYWORDS)
 
 
 def extract_line_items_from_statement(data: dict) -> List[dict]:
@@ -226,16 +284,24 @@ Set needs_review=true for:
 - Low confidence matches
 """
 
+    # Select model: retry-specific > task-specific > default
+    if is_retry and Config.CAT_RETRY_MODEL:
+        model = Config.CAT_RETRY_MODEL
+    elif Config.CAT_MODEL:
+        model = Config.CAT_MODEL
+    else:
+        model = Config.EXTRACTION_MODEL
+
     start_time = time.time()
 
     response = chat(
-        model=Config.EXTRACTION_MODEL,
+        model=model,
         messages=[{"role": "user", "content": prompt}]
     )
 
     duration_ms = (time.time() - start_time) * 1000
     obs.log_llm_call(
-        model=Config.EXTRACTION_MODEL,
+        model=model,
         duration_ms=duration_ms,
         prompt=prompt,
         response=response["message"]["content"],
@@ -333,7 +399,7 @@ def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: b
 
 def apply_categorization_to_statement(
     data: dict,
-    match_results: Dict[str, MatchResult],
+    match_results: dict,
     llm_results: List[dict]
 ) -> dict:
     """
@@ -352,8 +418,6 @@ def apply_categorization_to_statement(
     Returns:
         Updated statement data with categorization metadata
     """
-    from coa.matcher import is_section_header
-
     # Build lookup for LLM results
     llm_lookup = {r["label"]: r for r in llm_results if "account_id" in r}
 
@@ -426,14 +490,15 @@ def apply_categorization_to_statement(
                 is_split = llm_result.get("is_split", False)
                 split_accounts = llm_result.get("split_accounts", [])
 
+                reasoning = llm_result.get("reasoning", "")
                 categorization = {
                     "coa_code": llm_result["account_id"],
                     "coa_name": llm_result.get("account_name", ""),
                     "coa_category": llm_result.get("category", ""),
                     "match_type": "llm_split" if is_split else "llm",
                     "confidence": conf,
-                    "reasoning": llm_result.get("reasoning", ""),
-                    "needs_review": conf == "low" or llm_result.get("needs_review", False),
+                    "reasoning": reasoning,
+                    "needs_review": conf == "low" or llm_result.get("needs_review", False) or _reasoning_acknowledges_ambiguity(reasoning),
                     "citation": "VMG/AAHA DATALINK Definitions",
                     # New split fields
                     "is_split": is_split,
@@ -509,14 +574,15 @@ def _merge_selective_categorization(
                 split_accounts = llm_result.get("split_accounts", [])
 
                 updated_row = dict(row)
+                retry_reasoning = llm_result.get("reasoning", "")
                 updated_row["categorization"] = {
                     "coa_code": llm_result["account_id"],
                     "coa_name": llm_result.get("account_name", ""),
                     "coa_category": llm_result.get("category", ""),
                     "match_type": "llm_split" if is_split else "llm_retry",
                     "confidence": conf,
-                    "reasoning": llm_result.get("reasoning", ""),
-                    "needs_review": conf == "low" or llm_result.get("needs_review", False),
+                    "reasoning": retry_reasoning,
+                    "needs_review": conf == "low" or llm_result.get("needs_review", False) or _reasoning_acknowledges_ambiguity(retry_reasoning),
                     "citation": "VMG/AAHA DATALINK Definitions (retry)",
                     "is_split": is_split,
                     "split_accounts": split_accounts,
@@ -597,7 +663,6 @@ def categorizer_node(state: dict) -> dict:
 
         # Extract line items and separate section headers from postable items
         line_items = extract_line_items_from_statement(data)
-        from coa.matcher import is_section_header
 
         section_headers = []
         postable_items = []
@@ -666,7 +731,7 @@ def categorizer_node(state: dict) -> dict:
                                 "reasoning": llm_result.get("reasoning", ""),
                             })
 
-                match_results: Dict[str, MatchResult] = {}
+                match_results: dict = {}
                 categorized = apply_categorization_to_statement(data, match_results, llm_results)
         else:
             # First pass: categorize all items

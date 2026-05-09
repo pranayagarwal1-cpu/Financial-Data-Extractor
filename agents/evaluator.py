@@ -146,6 +146,44 @@ An extraction PASSES if:
 }
 
 
+from decimal import Decimal
+
+
+def _parse_amount(val) -> Optional[Decimal]:
+    """Parse a raw string value into a Decimal amount."""
+    if val is None or val == "" or val == "null":
+        return None
+    s = str(val).replace("$", "").replace(",", "").replace(" ", "").strip()
+    # Parentheses denote negative values: (1,234) -> -1234
+    if s.startswith("(") and s.endswith(")"):
+        s = "-" + s[1:-1]
+    try:
+        return Decimal(s)
+    except Exception:
+        return None
+
+
+def _run_numeric_precheck(data: dict, statement_type: StatementType) -> tuple[float, str]:
+    """Run fast numeric pre-checks and return (score 0-10, feedback)."""
+    total_values = 0
+    unparsable = 0
+
+    for section in data.get("sections", []):
+        for row in section.get("rows", []):
+            for val in row.get("values", []):
+                total_values += 1
+                if _parse_amount(val) is None and val not in (None, "", "null"):
+                    unparsable += 1
+
+    if total_values == 0:
+        return 0.0, "No numeric values found"
+
+    parse_rate = 1 - (unparsable / total_values)
+    score = round(10 * parse_rate, 1)
+    feedback = f"{unparsable}/{total_values} values unparsable"
+    return score, feedback
+
+
 def _calculate_missing_ratio(data: dict) -> float:
     """Calculate the ratio of missing/null values in the extraction."""
     total_values = 0
@@ -187,6 +225,85 @@ def _has_required_sections(data: dict, statement_type: StatementType) -> tuple[b
     return len(missing_sections) == 0, missing_sections
 
 
+def _find_subtotal_value(data: dict, keywords: list[str]) -> Optional[Decimal]:
+    """Find a subtotal row whose label matches any keyword and return its first numeric value."""
+    for section in data.get("sections", []):
+        for row in section.get("rows", []):
+            if not row.get("is_subtotal"):
+                continue
+            label = row.get("label", "").lower()
+            if any(kw in label for kw in keywords):
+                for val in row.get("values", []):
+                    parsed = _parse_amount(val)
+                    if parsed is not None:
+                        return parsed
+    return None
+
+
+def _run_equation_checks(data: dict, statement_type: StatementType) -> tuple[bool, str]:
+    """Run programmatic accounting equation checks. Returns (passed, feedback)."""
+    if statement_type == StatementType.BALANCE_SHEET:
+        total_assets = _find_subtotal_value(data, ["total asset", "assets total", "total assets", "asset total"])
+        total_liab = _find_subtotal_value(data, ["total liabilit", "liabilit total", "total liabilities", "liabilities total"])
+        total_equity = _find_subtotal_value(data, ["total equity", "equity total", "shareholders equity", "stockholders equity", "net asset"])
+
+        if total_assets is not None and total_liab is not None and total_equity is not None:
+            expected = total_liab + total_equity
+            diff = abs(total_assets - expected)
+            tolerance = max(Decimal("1"), expected * Decimal("0.01"))
+            if diff > tolerance:
+                return False, (
+                    f"Balance sheet does not balance: Assets ({total_assets}) ≠ "
+                    f"Liabilities ({total_liab}) + Equity ({total_equity}) = {expected} (diff: {diff})"
+                )
+
+    elif statement_type == StatementType.INCOME_STATEMENT:
+        revenue = _find_subtotal_value(data, ["total revenue", "revenue total", "gross revenue", "net revenue"])
+        cogs = _find_subtotal_value(data, ["cost of goods", "cost of revenue", "cogs", "cost of sales"])
+        gross_profit = _find_subtotal_value(data, ["gross profit", "gross income", "gross margin"])
+
+        if revenue is not None and cogs is not None and gross_profit is not None:
+            expected = revenue - cogs
+            diff = abs(gross_profit - expected)
+            tolerance = max(Decimal("1"), abs(expected) * Decimal("0.01"))
+            if diff > tolerance:
+                return False, (
+                    f"Gross Profit does not reconcile: {gross_profit} ≠ "
+                    f"Revenue ({revenue}) - COGS ({cogs}) = {expected} (diff: {diff})"
+                )
+
+        # Check operating income if components are available
+        gross = gross_profit if gross_profit is not None else _find_subtotal_value(data, ["gross profit"])
+        operating_income = _find_subtotal_value(data, ["operating income", "operating profit", "income from operations"])
+        opex = _find_subtotal_value(data, ["total operating expense", "operating expense total", "total expenses"])
+        if gross is not None and opex is not None and operating_income is not None:
+            expected = gross - opex
+            diff = abs(operating_income - expected)
+            tolerance = max(Decimal("1"), abs(expected) * Decimal("0.01"))
+            if diff > tolerance:
+                return False, (
+                    f"Operating Income does not reconcile: {operating_income} ≠ "
+                    f"Gross Profit ({gross}) - OpEx ({opex}) = {expected} (diff: {diff})"
+                )
+
+    elif statement_type == StatementType.CASH_FLOW:
+        net_change = _find_subtotal_value(data, ["net change in cash", "net increase", "net decrease", "change in cash"])
+        beginning = _find_subtotal_value(data, ["cash at beginning", "beginning cash", "cash, beginning"])
+        ending = _find_subtotal_value(data, ["cash at end", "ending cash", "cash, end", "cash and equivalents"])
+
+        if net_change is not None and beginning is not None and ending is not None:
+            expected = ending - beginning
+            diff = abs(net_change - expected)
+            tolerance = max(Decimal("1"), abs(expected) * Decimal("0.01"))
+            if diff > tolerance:
+                return False, (
+                    f"Cash flow does not reconcile: Net Change ({net_change}) ≠ "
+                    f"Ending ({ending}) - Beginning ({beginning}) = {expected} (diff: {diff})"
+                )
+
+    return True, ""
+
+
 def evaluator_node(state: dict) -> dict:
     """
     Evaluate the quality of extracted financial statement data.
@@ -200,7 +317,7 @@ def evaluator_node(state: dict) -> dict:
     Returns:
         Updated state with evaluation_result (Dict[StatementType, dict])
     """
-    from utils.ollama_client import chat
+    from utils.llm_client import chat
     from utils.observability import get_observability
 
     obs = get_observability()
@@ -214,6 +331,7 @@ def evaluator_node(state: dict) -> dict:
         }
 
     evaluation_results = {}
+    last_evaluation_feedback = {}
 
     for statement_type, data in extracted_data.items():
         logging.info(f"Evaluating {statement_type.value}…")
@@ -223,9 +341,11 @@ def evaluator_node(state: dict) -> dict:
             # Pre-checks
             has_sections, missing = _has_required_sections(data, statement_type)
             missing_ratio = _calculate_missing_ratio(data)
+            numeric_score, numeric_feedback = _run_numeric_precheck(data, statement_type)
 
             print(f"   - Required sections present: {has_sections}")
             print(f"   - Missing value ratio: {missing_ratio:.1%}")
+            print(f"   - Numeric parseability: {numeric_score}/10 ({numeric_feedback})")
 
             # Get statement-specific prompt
             prompt = EVALUATION_PROMPTS[statement_type].format(
@@ -262,6 +382,16 @@ def evaluator_node(state: dict) -> dict:
 
             evaluation = json.loads(eval_content)
 
+            # Layer 3: Programmatic equation checks (hard override)
+            code_passed, code_feedback = _run_equation_checks(data, statement_type)
+            if not code_passed and evaluation.get("passed"):
+                print(f"   ⚠️  Forcing FAIL (code check): {code_feedback}")
+                logging.warning(f"{statement_type.value}: forcing FAIL — {code_feedback}")
+                evaluation["passed"] = False
+                scores = evaluation.get("scores", {})
+                scores["data_integrity"] = min(scores.get("data_integrity", 10), 3)
+                evaluation["feedback"] = f"{code_feedback} | {evaluation.get('feedback', '')}"
+
             eval_status = '✅ PASSED' if evaluation.get('passed') else '❌ FAILED'
             logging.info(f"{statement_type.value}: {eval_status}")
             print(f"   - Evaluation: {eval_status}")
@@ -276,16 +406,17 @@ def evaluator_node(state: dict) -> dict:
                 run_id=run_id
             )
 
-            evaluation_results[statement_type.value] = {
+            evaluation_results[statement_type] = {
                 "passed": evaluation.get("passed", False),
                 "feedback": evaluation.get("feedback", ""),
                 "scores": evaluation.get("scores", {})
             }
+            last_evaluation_feedback[statement_type] = evaluation.get("feedback", "")
 
         except json.JSONDecodeError as e:
             logging.error(f"Error parsing evaluation for {statement_type.value}: {e}")
             print(f"   ⚠️  Error parsing evaluation: {e}")
-            evaluation_results[statement_type.value] = {
+            evaluation_results[statement_type] = {
                 "passed": False,
                 "feedback": f"Error parsing evaluation: {e}",
                 "scores": {}
@@ -293,7 +424,7 @@ def evaluator_node(state: dict) -> dict:
         except Exception as e:
             logging.error(f"Evaluation error for {statement_type.value}: {e}")
             print(f"   ⚠️  Evaluation error: {e}")
-            evaluation_results[statement_type.value] = {
+            evaluation_results[statement_type] = {
                 "passed": False,
                 "feedback": f"Evaluation error: {e}",
                 "scores": {}
@@ -303,4 +434,8 @@ def evaluator_node(state: dict) -> dict:
     duration_ms = (time.time() - start_time) * 1000
     obs.log_node_timing("evaluator", duration_ms, run_id)
 
-    return {"evaluation_result": evaluation_results, "run_id": run_id}
+    return {
+        "evaluation_result": evaluation_results,
+        "last_evaluation_feedback": last_evaluation_feedback,
+        "run_id": run_id,
+    }

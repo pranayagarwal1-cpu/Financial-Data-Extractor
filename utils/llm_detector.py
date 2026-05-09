@@ -6,7 +6,9 @@ which pages contain each type of financial statement. This handles international
 documents with varying terminology.
 """
 
-from utils.ollama_client import chat
+import logging
+
+from utils.llm_client import chat
 import pdfplumber
 import json
 import re
@@ -14,6 +16,22 @@ import time
 from typing import List, Optional, Dict
 
 from utils.vlm_utils import StatementType
+
+
+def _extract_json_object(text: str) -> Optional[str]:
+    """Extract the first top-level JSON object from text using brace balancing."""
+    start = text.find("{")
+    if start == -1:
+        return None
+    count = 0
+    for i, ch in enumerate(text[start:], start=start):
+        if ch == "{":
+            count += 1
+        elif ch == "}":
+            count -= 1
+            if count == 0:
+                return text[start : i + 1]
+    return None
 
 
 # Detection descriptions for each statement type
@@ -243,7 +261,7 @@ RESPONSE FORMAT (JSON object only, no explanation):
 
     # Parse response
     content = response["message"]["content"].strip()
-    print(f"📝 Raw LLM response:\n{content[:500]}...")
+    logging.debug("Raw LLM detection response: %s", content[:500])
 
     # Clean up markdown fences
     if content.startswith("```"):
@@ -253,31 +271,39 @@ RESPONSE FORMAT (JSON object only, no explanation):
         content = content.rstrip("`").strip()
 
     # Extract JSON object
-    json_match = re.search(r'\{.*?\}', content, re.DOTALL)
-    if json_match:
+    result = None
+    try:
+        result = json.loads(content)
+    except json.JSONDecodeError:
+        json_str = _extract_json_object(content)
+        if json_str:
+            try:
+                result = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                logging.debug("Balanced-brace JSON extraction failed: %s", e)
+
+    if isinstance(result, dict):
         try:
-            result = json.loads(json_match.group())
             print(f"📋 Parsed JSON result: {result}")
-            if isinstance(result, dict):
-                # Convert string keys to StatementType and validate page numbers
-                output = {}
-                for st in statement_types:
-                    key = st.value
-                    pages = result.get(key, [])
-                    print(f"  {key}: raw={pages}")
-                    if isinstance(pages, list):
-                        valid_pages = [
-                            p for p in pages
-                            if isinstance(p, int) and 1 <= p <= total_pages
-                        ]
-                        output[st] = valid_pages
-                        print(f"  {key}: validated={valid_pages}")
-                    else:
-                        output[st] = []
-                print(f"✅ Final page mapping: {output}")
-                return output
+            # Convert string keys to StatementType and validate page numbers
+            output = {}
+            for st in statement_types:
+                key = st.value
+                pages = result.get(key, [])
+                print(f"  {key}: raw={pages}")
+                if isinstance(pages, list):
+                    valid_pages = [
+                        p for p in pages
+                        if isinstance(p, int) and 1 <= p <= total_pages
+                    ]
+                    output[st] = valid_pages
+                    print(f"  {key}: validated={valid_pages}")
+                else:
+                    output[st] = []
+            print(f"✅ Final page mapping: {output}")
+            return output
         except Exception as e:
-            print(f"⚠️  Error parsing JSON: {e}")
+            print(f"⚠️  Error processing parsed JSON: {e}")
 
     print("⚠️  Could not parse LLM response, returning empty results")
     return {st: [] for st in statement_types}

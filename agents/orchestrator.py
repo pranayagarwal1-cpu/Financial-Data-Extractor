@@ -37,7 +37,7 @@ def get_temp_dir(pdf_path: str) -> str:
 
 
 def setup_logging(pdf_path: str) -> Path:
-    """Set up log file for this extraction run."""
+    """Set up logging for this extraction run."""
     from datetime import datetime
 
     pdf_name = Path(pdf_path).stem
@@ -45,24 +45,26 @@ def setup_logging(pdf_path: str) -> Path:
     log_file = TMP_DIR / f"extract_{pdf_name}" / f"log_{timestamp}.txt"
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Get root logger and configure it properly
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
-    # Clear any existing handlers
-    logger.handlers.clear()
+    # Remove previous FileHandlers so each PDF gets its own log file
+    for h in list(logger.handlers):
+        if isinstance(h, logging.FileHandler):
+            logger.removeHandler(h)
 
-    # Add file handler
+    # Add file handler for this PDF
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     logger.addHandler(file_handler)
 
-    # Add stream handler for terminal output
-    stream_handler = logging.StreamHandler()
-    stream_handler.setLevel(logging.INFO)
-    stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(stream_handler)
+    # Ensure a single stream handler exists (console output)
+    if not any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler) for h in logger.handlers):
+        stream_handler = logging.StreamHandler()
+        stream_handler.setLevel(logging.INFO)
+        stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(stream_handler)
 
     return log_file
 
@@ -181,11 +183,8 @@ def should_retry(state: dict) -> str:
         print(f"⚠️  Extraction quality insufficient. Retrying ({retry_count + 1}/{Config.MAX_RETRIES})…")
         return "extractor"
 
-    logging.error("Max retries reached")
-    if enable_categorization:
-        print("❌ Max retries reached. Proceeding to categorization.")
-        return "categorizer"
-    print("❌ Max retries reached. Saving without categorization.")
+    logging.error("Max retries reached, extraction quality insufficient")
+    print("❌ Max retries reached. Saving raw extracted data without categorization.")
     return "save_outputs"
 
 

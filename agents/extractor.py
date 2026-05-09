@@ -37,14 +37,35 @@ def get_temp_dir(pdf_path: str) -> str:
     return str(temp_dir)
 
 
+def _build_extraction_prompt(statement_type: StatementType, feedback: str = "") -> str:
+    """Build extraction prompt, appending evaluator feedback on retry."""
+    from utils.vlm_utils import EXTRACTION_PROMPTS
+    base = EXTRACTION_PROMPTS[statement_type]
+    if not feedback:
+        return base
+    return (
+        f"{base}\n\n"
+        f"IMPORTANT — CORRECTIONS FROM PREVIOUS EXTRACTION ATTEMPT:\n"
+        f"{feedback}\n\n"
+        f"Please ensure all issues above are fixed in this extraction."
+    )
+
+
 def extractor_node(state: dict) -> dict:
     """
     Extract financial statement data from identified pages.
+
+    Supports selective retry: on re-extraction, only failed statement types
+    are re-processed. Passed types from the previous attempt are preserved.
+    Feedback from the evaluator is injected into the VLM prompt.
 
     Args:
         state: Current workflow state with:
             - statement_pages: Dict[StatementType, List[int]]
             - statement_types: List[StatementType] to extract
+            - evaluation_result: Optional, used on retry to find failures
+            - last_evaluation_feedback: Optional, injected into retry prompt
+            - extracted_data: Optional, preserved for passed types on retry
 
     Returns:
         Updated state with extracted_data: Dict[StatementType, dict]
@@ -70,6 +91,28 @@ def extractor_node(state: dict) -> dict:
     # Increment retry count
     new_retry_count = retry_count + 1
 
+    # Determine which statement types to extract
+    types_to_extract = list(statement_types)
+    all_data: Dict[StatementType, dict] = {}
+
+    if retry_count > 0:
+        evaluation = state.get("evaluation_result", {})
+        failed_types = [
+            st for st in statement_types
+            if not evaluation.get(st, {}).get("passed", False)
+        ]
+        if failed_types and len(failed_types) < len(statement_types):
+            types_to_extract = failed_types
+            # Preserve passed types from previous extraction
+            prev_extracted = state.get("extracted_data", {})
+            for st in statement_types:
+                if st not in failed_types and st in prev_extracted:
+                    all_data[st] = prev_extracted[st]
+            print(
+                f"🔄 Selective retry: {len(failed_types)} of {len(statement_types)} "
+                f"statement type(s) need re-extraction"
+            )
+
     # Get temp directory for this extraction
     tmp_dir = get_temp_dir(pdf_path)
     cache_dir = os.path.join(tmp_dir, "image_cache")
@@ -79,6 +122,9 @@ def extractor_node(state: dict) -> dict:
     print(f"🔄 Extraction attempt {new_retry_count}/{Config.MAX_RETRIES + 1}")
     print(f"📂 Temp directory: {tmp_dir}")
     print("Extracting data with VLM…\n")
+
+    # Load evaluator feedback for retry prompt injection
+    feedback_map = state.get("last_evaluation_feedback", {})
 
     def extract_single_page(statement_type: StatementType, page_num: int) -> Optional[dict]:
         """Extract data from a single page. Returns extracted data or None."""
@@ -90,7 +136,12 @@ def extractor_node(state: dict) -> dict:
             img_path = rasterize_page(pdf_path, page_num, ext_prefix, dpi=Config.EXTRACT_DPI)
 
         try:
-            page_data = vlm_extract_statement(img_path, statement_type, Config.EXTRACTION_MODEL)
+            feedback = feedback_map.get(statement_type, "")
+            prompt = _build_extraction_prompt(statement_type, feedback) if feedback else None
+            page_data = vlm_extract_statement(
+                img_path, statement_type, Config.EXTRACTION_MODEL,
+                run_id=run_id, prompt=prompt
+            )
             logging.info(f"  Page {page_num} extracted successfully")
             return page_data
         except Exception as e:
@@ -147,11 +198,9 @@ def extractor_node(state: dict) -> dict:
 
         return (statement_type, statement_data)
 
-    # Extract all statement types in parallel
-    all_data: Dict[StatementType, dict] = {}
-
-    with ThreadPoolExecutor(max_workers=len(statement_types)) as executor:
-        futures = {executor.submit(extract_statement_type, st): st for st in statement_types}
+    # Extract statement types in parallel (on retry, only failed types)
+    with ThreadPoolExecutor(max_workers=len(types_to_extract)) as executor:
+        futures = {executor.submit(extract_statement_type, st): st for st in types_to_extract}
 
         for future in as_completed(futures):
             statement_type, data = future.result()

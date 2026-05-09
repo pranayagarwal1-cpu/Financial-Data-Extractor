@@ -40,3 +40,4 @@ class AgentState(TypedDict, total=False):
     log_file: Optional[str]
     run_id: Optional[str]
     enable_categorization: bool
+    last_evaluation_feedback: Dict[StatementType, str]

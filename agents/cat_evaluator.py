@@ -14,7 +14,7 @@ import logging
 import time
 from typing import Dict, List
 
-from utils.ollama_client import chat
+from utils.llm_client import chat
 
 from config import Config
 
@@ -80,39 +80,81 @@ PASS if: average ≥ 6, coverage ≥ 7, format_validity = 10, category_sanity �
 """
 
 
-def _extract_sample_mappings(categorized_data: dict, limit: int = 20) -> List[dict]:
-    """Extract a sample of mappings for the LLM to evaluate."""
-    samples = []
+def _extract_sample_mappings(categorized_data: dict, limit: int = 50) -> List[dict]:
+    """Extract a stratified sample of mappings for the LLM to evaluate.
+
+    Ensures representation from every section so the LLM sees revenue,
+    COGS, and expense mappings regardless of document order.
+    """
+    import random
+
+    # Separate items by type
+    categorized_by_section: Dict[str, List[dict]] = {}
+    uncategorized: List[dict] = []
+    headers: List[dict] = []
+
     for section in categorized_data.get("sections", []):
+        section_name = section.get("name", "")
         for row in section.get("rows", []):
             cat = row.get("categorization")
-            if cat and cat.get("coa_code"):
-                samples.append({
+            if row.get("line_type") == "section_header":
+                headers.append({
                     "label": row.get("label", ""),
-                    "section": section.get("name", ""),
-                    "coa_code": cat.get("coa_code"),
-                    "coa_name": cat.get("coa_name"),
-                    "coa_category": cat.get("coa_category"),
-                    "confidence": cat.get("confidence"),
-                    "match_type": cat.get("match_type"),
-                    "reasoning": cat.get("reasoning", ""),
-                    "is_split": cat.get("is_split", False),
-                    "split_accounts": cat.get("split_accounts", []),
-                })
-            elif row.get("line_type") == "section_header":
-                samples.append({
-                    "label": row.get("label", ""),
-                    "section": section.get("name", ""),
+                    "section": section_name,
                     "type": "section_header (no account)",
                 })
-            elif not row.get("is_subtotal") and not row.get("line_type"):
-                samples.append({
-                    "label": row.get("label", ""),
-                    "section": section.get("name", ""),
-                    "coa_code": None,
-                    "status": "UNCATEGORIZED",
-                })
-    return samples[:limit]
+            elif not row.get("is_subtotal"):
+                if cat and cat.get("coa_code"):
+                    categorized_by_section.setdefault(section_name, []).append({
+                        "label": row.get("label", ""),
+                        "section": section_name,
+                        "coa_code": cat.get("coa_code"),
+                        "coa_name": cat.get("coa_name"),
+                        "coa_category": cat.get("coa_category"),
+                        "confidence": cat.get("confidence"),
+                        "match_type": cat.get("match_type"),
+                        "reasoning": cat.get("reasoning", ""),
+                        "is_split": cat.get("is_split", False),
+                        "split_accounts": cat.get("split_accounts", []),
+                    })
+                else:
+                    uncategorized.append({
+                        "label": row.get("label", ""),
+                        "section": section_name,
+                        "coa_code": None,
+                        "status": "UNCATEGORIZED",
+                    })
+
+    # Build stratified sample
+    selected: List[dict] = []
+
+    # 1. Include ALL uncategorized items (directly impacts coverage score)
+    selected.extend(uncategorized)
+
+    # 2. Include one section header per section (document structure context)
+    seen_header_sections = set()
+    for h in headers:
+        if h["section"] not in seen_header_sections:
+            selected.append(h)
+            seen_header_sections.add(h["section"])
+
+    # 3. Ensure at least 3 items from every section that has categorized rows
+    remainder_pool: List[dict] = []
+    for section_name, items in categorized_by_section.items():
+        # Pick up to 3 from this section
+        quota = min(3, len(items))
+        # Use deterministic selection (first N) for reproducibility, but shuffle
+        # the remainder into the pool so later random fill is representative
+        selected.extend(items[:quota])
+        remainder_pool.extend(items[quota:])
+
+    # 4. Fill remaining slots with random samples from the remainder pool
+    slots_left = limit - len(selected)
+    if slots_left > 0 and remainder_pool:
+        random.shuffle(remainder_pool)
+        selected.extend(remainder_pool[:slots_left])
+
+    return selected[:limit]
 
 
 def _check_ignored_corrections(categorized_data: dict, practice_id: str) -> list:
@@ -250,7 +292,7 @@ def cat_evaluator_node(state: dict) -> dict:
 
         # Only evaluate income statement (only one that gets categorized)
         if st_name != "income_statement":
-            evaluation_results[st_name] = {
+            evaluation_results[st_key] = {
                 "passed": True,
                 "feedback": "Not categorized (no evaluation needed)",
                 "scores": {},
@@ -278,7 +320,7 @@ def cat_evaluator_node(state: dict) -> dict:
 
             # If nothing to evaluate, skip
             if heuristics["postable_items"] == 0:
-                evaluation_results[st_name] = {
+                evaluation_results[st_key] = {
                     "passed": True,
                     "feedback": "No postable items to categorize",
                     "scores": {},
@@ -360,7 +402,7 @@ def cat_evaluator_node(state: dict) -> dict:
             if hard_fail and evaluation.get("passed"):
                 print(f"   ⚠️  Forcing FAIL: learned correction ignored {hard_fail} time(s)")
 
-            evaluation_results[st_name] = {
+            evaluation_results[st_key] = {
                 "passed": passed,
                 "feedback": evaluation.get("feedback", ""),
                 "scores": evaluation.get("scores", {}),
@@ -373,7 +415,7 @@ def cat_evaluator_node(state: dict) -> dict:
             # Fall back to heuristic-only pass/fail
             heuristics = _run_heuristic_prechecks(data, summary_stats, practice_id)
             passed = heuristics["coverage_rate"] >= 0.7 and heuristics["ignored_count"] == 0
-            evaluation_results[st_name] = {
+            evaluation_results[st_key] = {
                 "passed": passed,
                 "feedback": f"Heuristic-only: coverage={heuristics['coverage_rate']:.1%}, ignored={heuristics['ignored_count']} (LLM parse failed)",
                 "scores": {},
@@ -383,7 +425,7 @@ def cat_evaluator_node(state: dict) -> dict:
         except Exception as e:
             logging.error(f"Cat evaluation error: {e}")
             print(f"   ⚠️  Cat evaluation error: {e}")
-            evaluation_results[st_name] = {
+            evaluation_results[st_key] = {
                 "passed": False,
                 "feedback": f"Evaluation error: {e}",
                 "scores": {},
