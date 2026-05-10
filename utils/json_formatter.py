@@ -1,6 +1,8 @@
 import json
 from typing import Any
 
+from models.schemas import StatementData
+
 
 def format_json_output(data: dict, indent: int = 2, include_categorization: bool = True) -> str:
     """
@@ -16,6 +18,8 @@ def format_json_output(data: dict, indent: int = 2, include_categorization: bool
     Returns:
         Formatted JSON string
     """
+    if isinstance(data, StatementData):
+        return data.model_dump_json_clean(indent=indent)
     return json.dumps(data, indent=indent)
 
 

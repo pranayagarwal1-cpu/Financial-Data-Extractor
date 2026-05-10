@@ -126,7 +126,7 @@ def _detect_statements_vlm_fallback(
             # Rasterize page
             image_prefix = os.path.join(tmp_dir, f"page_{page_num}")
             try:
-                image_path = rasterize_page(pdf_path, page_num, image_prefix)
+                image_path = rasterize_page(pdf_path, page_num, image_prefix, auto_rotate=Config.AUTO_CORRECT_ORIENTATION)
             except Exception as e:
                 print(f"  ⚠️  Failed to rasterize page {page_num}: {e}")
                 continue
@@ -143,11 +143,11 @@ def _detect_statements_vlm_fallback(
             except Exception as e:
                 print(f"  ⚠️  Detection error for page {page_num}: {e}")
 
-            # Clean up image
+            # Clean up image — log so we notice tmp leaks
             try:
                 os.remove(image_path)
-            except:
-                pass
+            except OSError as e:
+                logging.warning(f"Failed to remove tmp image {image_path}: {e}")
 
     # Summary
     for st, pages in result.items():

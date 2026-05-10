@@ -83,20 +83,21 @@ def create_workflow(statement_types: list = None) -> StateGraph:
         check_detection_result,
         {
             "extractor": "extractor",
-            "end": "save_outputs"
+            "end": END
         }
     )
 
     workflow.add_edge("extractor", "evaluator")
 
-    # Conditional edge: retry or save
+    # Conditional edge: retry, save, or terminate
     workflow.add_conditional_edges(
         "evaluator",
         should_retry,
         {
             "extractor": "extractor",
-            "categorizer": "categorizer",  # Pass to categorizer if evaluation passes and enabled
-            "save_outputs": "save_outputs",  # Skip categorization if disabled
+            "categorizer": "categorizer",
+            "save_outputs": "save_outputs",
+            "end": END,
         }
     )
 

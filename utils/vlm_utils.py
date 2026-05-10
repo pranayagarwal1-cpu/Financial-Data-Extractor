@@ -72,10 +72,12 @@ Rules:
 - For subtotal/total rows set is_subtotal to true.
 - Use null for missing values.
 - Keep values as strings exactly as shown (e.g. "$1,234" or "1,234").
+- **COLUMN ORDER IS CRITICAL: The `periods` array must reflect the exact left-to-right column order shown in the image. If the headers read "2025" then "2024" from left to right, `periods` must be ["2025", "2024"] and every `values` array must follow that same order. Do NOT swap columns.**
+- **Only extract columns that represent actual time periods (dates, months, quarters, years). Do NOT extract percentage columns like "% of Income", "% of Total", "% Change", or any other ratio/percentage columns. If a percentage column exists, skip it entirely.**
 """,
 
     StatementType.INCOME_STATEMENT: """Extract the complete income statement from this image.
-Return ONLY valid JSON (no markdown fences, no explanation, no <think> blocks) with this exact structure:
+Return ONLY valid JSON (no markdown fences, no explanation, no reasoning blocks) with this exact structure:
 
 {
   "title": "Statement title as shown",
@@ -100,10 +102,13 @@ Rules:
 - For subtotal/total rows (like Gross Profit, Operating Income, Net Income) set is_subtotal to true.
 - Use null for missing values.
 - Keep values as strings exactly as shown (e.g. "$1,234" or "1,234").
+- **COLUMN ORDER IS CRITICAL: The `periods` array must reflect the exact left-to-right column order shown in the image. If the headers read "2025" then "2024" from left to right, `periods` must be ["2025", "2024"] and every `values` array must follow that same order. Do NOT swap columns.**
+- **IMPORTANT: If this page is a continuation of a section from the previous page (no visible section header), do NOT invent a new section name. Continue the rows in the SAME section as the previous page, keeping the original section name.**
+- **Only extract columns that represent actual time periods (dates, months, quarters, years). Do NOT extract percentage columns like "% of Income", "% of Total", "% Change", or any other ratio/percentage columns. If a percentage column exists, skip it entirely.**
 """,
 
     StatementType.CASH_FLOW: """Extract the complete cash flow statement from this image.
-Return ONLY valid JSON (no markdown fences, no explanation, no <think> blocks) with this exact structure:
+Return ONLY valid JSON (no markdown fences, no explanation, no reasoning blocks) with this exact structure:
 
 {
   "title": "Statement title as shown",
@@ -128,6 +133,8 @@ Rules:
 - For subtotal/total rows (like Net Cash from Operating Activities) set is_subtotal to true.
 - Use null for missing values.
 - Keep values as strings exactly as shown (e.g. "$1,234" or "(1,234)" for negatives).
+- **COLUMN ORDER IS CRITICAL: The `periods` array must reflect the exact left-to-right column order shown in the image. If the headers read "2025" then "2024" from left to right, `periods` must be ["2025", "2024"] and every `values` array must follow that same order. Do NOT swap columns.**
+- **Only extract columns that represent actual time periods (dates, months, quarters, years). Do NOT extract percentage columns like "% of Income", "% of Total", "% Change", or any other ratio/percentage columns. If a percentage column exists, skip it entirely.**
 """,
 }
 
@@ -262,6 +269,9 @@ def vlm_extract_statement(image_path: str, statement_type: StatementType, model:
     """
     Ask the VLM to extract a financial statement as structured JSON.
 
+    Validates the raw VLM output against the StatementData schema before
+    returning, so structural LLM errors are caught immediately.
+
     Args:
         image_path: Path to the rasterized page image
         statement_type: Type of statement to extract
@@ -270,9 +280,10 @@ def vlm_extract_statement(image_path: str, statement_type: StatementType, model:
         prompt: Optional custom prompt (used for retry with feedback)
 
     Returns:
-        Dict with keys: title, statement_type, periods, sections
+        Plain dict with keys: title, statement_type, periods, sections
     """
     from utils.observability import get_observability
+    from models.schemas import StatementData
     obs = get_observability()
     start_time = time.time()
 
@@ -298,7 +309,11 @@ def vlm_extract_statement(image_path: str, statement_type: StatementType, model:
 
     raw = response["message"]["content"].strip()
     raw = strip_vlm_response(raw)
-    return json.loads(raw)
+    parsed = json.loads(raw)
+
+    # Validate schema and dump back to a plain dict for downstream compatibility
+    validated = StatementData.from_vlm_dict(parsed)
+    return validated.model_dump_clean()
 
 
 # Legacy function names for backward compatibility

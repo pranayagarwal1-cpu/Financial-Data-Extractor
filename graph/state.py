@@ -1,5 +1,6 @@
 from typing import TypedDict, Optional, List, Dict, Any
 from utils.vlm_utils import StatementType
+from models.schemas import StatementData
 
 
 class AgentState(TypedDict, total=False):
@@ -10,7 +11,7 @@ class AgentState(TypedDict, total=False):
         input_pdf: Path to the input PDF file
         statement_types: List of statement types to extract
         statement_pages: Dict mapping StatementType to list of page numbers
-        extracted_data: Dict mapping StatementType to extracted data
+        extracted_data: Dict mapping StatementType to extracted data (StatementData as dict)
         evaluation_result: Dict mapping StatementType to evaluation results
         categorized_data: Dict mapping StatementType to categorized data (with CoA mappings)
         categorization_summary: Summary statistics for categorization
@@ -27,9 +28,9 @@ class AgentState(TypedDict, total=False):
     input_pdf: str
     statement_types: List[StatementType]
     statement_pages: Dict[StatementType, List[int]]
-    extracted_data: Dict[StatementType, dict]
+    extracted_data: Dict[StatementType, StatementData]
     evaluation_result: Dict[StatementType, dict]
-    categorized_data: Dict[StatementType, dict]
+    categorized_data: Dict[StatementType, StatementData]
     categorization_summary: Dict[str, Any]
     review_queue: List[Dict[str, Any]]
     retry_count: int
@@ -41,3 +42,5 @@ class AgentState(TypedDict, total=False):
     run_id: Optional[str]
     enable_categorization: bool
     last_evaluation_feedback: Dict[StatementType, str]
+    guardrail_flags: List[str]
+    page_texts: Dict[StatementType, List[str]]

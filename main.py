@@ -25,6 +25,7 @@ from pathlib import Path
 
 from graph.workflow import create_workflow
 from utils.vlm_utils import StatementType
+from config import Config
 
 # Base directories
 BASE_DIR = Path(__file__).parent
@@ -86,35 +87,53 @@ def process_single_pdf(pdf_path: str, statement_types: list = None, enable_categ
         Final state from the workflow
     """
     from utils.observability import get_observability
+    from utils.guardrails import get_guardrails
     obs = get_observability()
+    gr = get_guardrails()
 
     if not os.path.exists(pdf_path):
         print(f"❌ File not found: {pdf_path}")
         return {"error_message": "File not found"}
 
-    # Create and run workflow with specified statement types
-    workflow = create_workflow(statement_types)
+    # Concurrency guardrail — cap parallel workflow invocations
+    if not Config.DISABLE_GUARDRAILS and not gr.concurrency.acquire(timeout=30.0):
+        print("❌ System is at maximum concurrency. Please try again later.")
+        return {"error_message": "System is at maximum concurrency. Please try again later."}
 
-    initial_state = {
-        "input_pdf": pdf_path,
-        "statement_types": statement_types or list(StatementType),
-        "retry_count": 0,
-        "enable_categorization": enable_categorization,
-    }
-
+    run_id = None
     try:
-        final_state = workflow.invoke(initial_state)
-        # Ensure run is ended on error
-        if final_state.get("error_message") and not final_state.get("output_files"):
-            run_id = final_state.get("run_id")
-            if run_id:
+        # Create and run workflow with specified statement types
+        workflow = create_workflow(statement_types)
+
+        resolved_types = statement_types or list(StatementType)
+        # Start the run before invoking the workflow so the run_id is always
+        # available to error handlers, even if a node raises before orchestrator
+        # has a chance to call obs.start_run().
+        run_id = obs.start_run(pdf_path, resolved_types)
+
+        initial_state = {
+            "input_pdf": pdf_path,
+            "statement_types": resolved_types,
+            "retry_count": 0,
+            "enable_categorization": enable_categorization,
+            "run_id": run_id,
+        }
+
+        try:
+            final_state = workflow.invoke(initial_state)
+            # Ensure run is ended on error
+            if final_state.get("error_message") and not final_state.get("output_files"):
                 obs.end_run(run_id=run_id, success=False, error_message=final_state["error_message"])
-        return final_state
-    except Exception as e:
-        print(f"❌ Workflow error: {e}")
-        # End run on exception
-        obs.end_run(run_id=initial_state.get("run_id", ""), success=False, error_message=str(e))
-        return {"error_message": str(e)}
+            return final_state
+        except Exception as e:
+            print(f"❌ Workflow error: {e}")
+            obs.end_run(run_id=run_id, success=False, error_message=str(e))
+            return {"error_message": str(e), "run_id": run_id}
+    finally:
+        if not Config.DISABLE_GUARDRAILS:
+            gr.concurrency.release()
+            if run_id:
+                gr.end_run(run_id)
 
 
 def process_folder(folder_path: str, statement_types: list = None, pattern: str = "*.pdf", enable_categorization: bool = True) -> dict:

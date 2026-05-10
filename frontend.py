@@ -2,60 +2,57 @@
 Streamlit Frontend for Multi-Agent Financial Statement Extractor
 
 Run with: streamlit run frontend.py
+
+UI is split into components under ui/ — see ui/sidebar.py, ui/results.py,
+ui/metrics_dashboard.py. Session state defaults live in ui/session.py.
 """
 
-import streamlit as st
-import os
-import json
-import shutil
+import sys
 from pathlib import Path
-from datetime import datetime
-import pandas as pd
 
-# Import workflow and statement types
+# Ensure project root is on path before any project imports
+ROOT = Path(__file__).parent.resolve()
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+# Force-load graph.state so typing.get_type_hints() can resolve it later
+# when LangGraph introspects AgentState inside StateGraph().
+import graph.state  # noqa: F401
+
+import streamlit as st
+
 from graph.workflow import create_workflow
-from utils.vlm_utils import StatementType
+from ui import INPUT_DIR, OUTPUT_DIR, TMP_DIR
+from ui.session import init_session_state
+from ui.sidebar import render_sidebar
+from ui.results import render_results
+from ui.metrics_dashboard import render_metrics_dashboard
 
-# -----------------------------------------------------------------------------
-# Paths
-# -----------------------------------------------------------------------------
-BASE_DIR = Path(__file__).parent
-INPUT_DIR = BASE_DIR / "input"
-OUTPUT_DIR = BASE_DIR / "output"
-TMP_DIR = BASE_DIR / "tmp"
 
 # Ensure directories exist
 INPUT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TMP_DIR.mkdir(parents=True, exist_ok=True)
 
-# -----------------------------------------------------------------------------
-# Helper Functions
-# -----------------------------------------------------------------------------
-
-def get_output_files_for_pdf(pdf_name: str):
-    """Get all output files for a given PDF."""
-    pattern = f"{pdf_name}_*"
-    files = list(OUTPUT_DIR.glob(pattern))
-    files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
-    return files
-
 
 def process_pdf(pdf_path: str, statement_types: list, log_callback=None, enable_categorization: bool = True):
-    """Process a PDF through the workflow and return results with logs."""
+    """Process a PDF through the workflow and return final state."""
     from utils.observability import get_observability
     obs = get_observability()
 
-    # Log callback
     if log_callback:
         log_callback("🔍 Analyzing PDF structure...")
 
     workflow = create_workflow(statement_types)
+    # Start the run up front so the run_id is always known to error handlers,
+    # even if a node raises before orchestrator can call obs.start_run().
+    run_id = obs.start_run(pdf_path, statement_types)
     initial_state = {
         "input_pdf": pdf_path,
         "statement_types": statement_types,
         "retry_count": 0,
         "enable_categorization": enable_categorization,
+        "run_id": run_id,
     }
 
     if log_callback:
@@ -64,176 +61,39 @@ def process_pdf(pdf_path: str, statement_types: list, log_callback=None, enable_
     try:
         final_state = workflow.invoke(initial_state)
         if final_state.get("error_message") and not final_state.get("output_files"):
-            run_id = final_state.get("run_id")
-            if run_id:
-                obs.end_run(run_id=run_id, success=False, error_message=final_state["error_message"])
+            obs.end_run(run_id=run_id, success=False, error_message=final_state["error_message"])
         if log_callback:
             log_callback("✅ Extraction complete!")
         return final_state
     except Exception as e:
-        obs.end_run(run_id=initial_state.get("run_id", ""), success=False, error_message=str(e))
+        obs.end_run(run_id=run_id, success=False, error_message=str(e))
         if log_callback:
             log_callback(f"❌ Error: {str(e)}")
-        return {"error_message": str(e)}
-
-
-def load_excel(path: Path):
-    """Load Excel file and return dict of sheets."""
-    xl = pd.ExcelFile(path)
-    return {sheet: xl.parse(sheet) for sheet in xl.sheet_names}
+        return {"error_message": str(e), "run_id": run_id}
 
 
 # -----------------------------------------------------------------------------
-# Page Config
+# Page config + state
 # -----------------------------------------------------------------------------
 st.set_page_config(
     page_title="Financial Statement Extractor",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
+
+init_session_state()
 
 # -----------------------------------------------------------------------------
 # Sidebar
 # -----------------------------------------------------------------------------
-with st.sidebar:
-    # Contact Button at top of sidebar
-    st.markdown(
-        """
-        <style>
-        .sidebar-contact a {
-            background-color: #001f3f;
-            color: white;
-            padding: 12px 24px;
-            text-decoration: none;
-            border-radius: 6px;
-            font-weight: 600;
-            display: block;
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        .sidebar-contact a:hover {
-            background-color: #003366;
-        }
-        </style>
-        <div class="sidebar-contact">
-            <a href="mailto:data.analytics.product@gmail.com?subject=Interested in Customizing Financial Statement Extractor&body=Hi, I found the Financial Statement Extractor valuable and I'm interested in customizing it for my use case.">
-                Contact
-            </a>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    # Upload section
-    st.header("📁 Upload PDFs")
-
-    # Center align upload button and caption
-    st.markdown(
-        "<style>"
-        "div[data-testid='stFileUploader'] {text-align: center;}"
-        "div[data-testid='stFileUploader'] > div {margin: 0 auto;}"
-        "</style>",
-        unsafe_allow_html=True
-    )
-
-    uploaded_files = st.file_uploader(
-        "Choose PDFs",
-        type=["pdf"],
-        accept_multiple_files=True,
-        help="Drag and drop or click to browse. Multiple files supported."
-    )
-
-    if uploaded_files:
-        for uploaded_file in uploaded_files:
-            pdf_path = INPUT_DIR / uploaded_file.name
-            with open(pdf_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            if "last_uploaded_file" not in st.session_state or st.session_state.get("last_uploaded_file") != uploaded_file.name:
-                st.session_state["pdfs_uploaded"] = st.session_state.get("pdfs_uploaded", 0) + 1
-                st.session_state["last_uploaded_file"] = uploaded_file.name
-
-        st.session_state["uploaded_pdfs"] = [str(INPUT_DIR / f.name) for f in uploaded_files]
-        st.success(f"✅ {len(uploaded_files)} file(s) uploaded!")
-
-    st.divider()
-
-    # Statement type selection
-    st.header("📊 Statements to Extract")
-    statement_options = {
-        StatementType.BALANCE_SHEET: "Balance Sheet",
-        StatementType.INCOME_STATEMENT: "Income Statement",
-        StatementType.CASH_FLOW: "Cash Flow Statement"
-    }
-
-    selected_statements = st.multiselect(
-        "Select statements:",
-        options=list(statement_options.keys()),
-        default=[StatementType.BALANCE_SHEET],
-        format_func=lambda x: statement_options[x]
-    )
-
-    st.session_state["selected_statements"] = selected_statements
-
-    # CoA categorization toggle
-    st.header("🏷️ CoA Categorization")
-    enable_categorization = st.toggle(
-        "Enable Chart of Accounts categorization",
-        value=True,
-        help="Map extracted line items to veterinary practice CoA codes. Adds ~5–15 min per income statement."
-    )
-    st.session_state["enable_categorization"] = enable_categorization
-
-    st.divider()
-
-    # Clean all files button
-    if st.button("🗑️ Clean All Files", width="stretch"):
-        files_deleted = 0
-
-        def clean_directory(directory: Path) -> int:
-            count = 0
-            if not directory.exists():
-                return 0
-            for item in directory.rglob("*"):
-                if item.is_file():
-                    item.unlink()
-                    count += 1
-            for item in sorted(directory.rglob("*"), key=lambda p: len(str(p)), reverse=True):
-                if item.is_dir():
-                    item.rmdir()
-            return count
-
-        files_deleted += clean_directory(INPUT_DIR)
-        files_deleted += clean_directory(OUTPUT_DIR)
-        files_deleted += clean_directory(TMP_DIR)
-
-        st.success(f"✅ {files_deleted} files deleted!")
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.rerun()
-
-    st.markdown("""
-    <div style="text-align: center; color: #28a745; font-weight: bold; margin-top: 15px;">
-        🔒 Zero Data Retention
-    </div>
-    <p style="text-align: center; font-size: 0.85em; color: #666;">
-        All files stored locally. Clean anytime.
-    </p>
-    """, unsafe_allow_html=True)
-
-    st.divider()
-
-    # Metrics Dashboard Link
-    st.header("📈 Analytics")
-    if st.button("📊 View Metrics Dashboard", width="stretch"):
-        st.session_state["show_metrics"] = not st.session_state.get("show_metrics", False)
+render_sidebar()
 
 # -----------------------------------------------------------------------------
 # Main Content
 # -----------------------------------------------------------------------------
 st.title("📊 Financial Statement Extractor")
 
-# Value Proposition
 st.markdown(
     """
     <div style="font-size: 18px; color: #555; margin-bottom: 30px; line-height: 1.6;">
@@ -243,36 +103,8 @@ st.markdown(
     Get structured Excel & JSON files ready for your financial models and data warehouse.
     </div>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
-
-# Initialize session counters
-if "pdfs_uploaded" not in st.session_state:
-    st.session_state["pdfs_uploaded"] = 0
-if "extracted_count" not in st.session_state:
-    st.session_state["extracted_count"] = 0
-if "excel_count" not in st.session_state:
-    st.session_state["excel_count"] = 0
-if "json_count" not in st.session_state:
-    st.session_state["json_count"] = 0
-if "extraction_counted" not in st.session_state:
-    st.session_state["extraction_counted"] = False
-
-# Track successful extractions
-if st.session_state.get("processing_complete") and not st.session_state.get("extraction_counted"):
-    all_results = st.session_state.get("all_results", [])
-    for result in all_results:
-        final_state = result["final_state"]
-        if final_state.get("output_files"):
-            output_files = final_state["output_files"]
-            excel_files = [f for f in output_files if f.endswith(".xlsx")]
-            json_files = [f for f in output_files if f.endswith(".json")]
-            st.session_state["extracted_count"] += 1
-            st.session_state["excel_count"] += len(excel_files)
-            st.session_state["json_count"] += len(json_files)
-        elif final_state.get("error_message"):
-            pass  # Count as processed but failed
-    st.session_state["extraction_counted"] = True
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -287,501 +119,60 @@ with col4:
 # -----------------------------------------------------------------------------
 # Process Button
 # -----------------------------------------------------------------------------
-if "uploaded_pdfs" in st.session_state:
-    st.divider()
+selected_statements = st.session_state.get("selected_statements", [])
+uploaded_pdfs = st.session_state.get("uploaded_pdfs", [])
 
-    pdf_count = len(st.session_state["uploaded_pdfs"])
+if uploaded_pdfs:
+    from ui.sidebar import STATEMENT_OPTIONS
+
+    st.divider()
+    pdf_count = len(uploaded_pdfs)
     if selected_statements:
-        st.caption(f"📊 Extracting: {', '.join([statement_options[s] for s in selected_statements])}")
+        st.caption(f"📊 Extracting: {', '.join([STATEMENT_OPTIONS[s] for s in selected_statements])}")
         st.caption(f"📁 Files to process: {pdf_count}")
 
-    process_btn = st.button("🚀 Extract Statements", type="primary", width="stretch")
-
-    if process_btn:
+    if st.button("🚀 Extract Statements", type="primary", width="stretch"):
         if not selected_statements:
             st.warning("Please select at least one statement type to extract.")
         else:
-            all_results = []
             log_messages = []
-
-            def add_log(message):
-                log_messages.append(message)
-
             progress_bar = st.progress(0)
             status_text = st.empty()
+            all_results = []
 
-            for idx, pdf_path in enumerate(st.session_state["uploaded_pdfs"]):
+            for idx, pdf_path in enumerate(uploaded_pdfs):
                 pdf_name = Path(pdf_path).stem
                 status_text.text(f"⏳ Processing {idx + 1}/{pdf_count}: {pdf_name}...")
-
-                # Step 1: Analyze PDF
-                add_log(f"🔍 Analyzing {pdf_name}...")
-
-                # Step 2: Detect statements
-                add_log(f"📄 Detecting financial statements in {pdf_name}...")
-
-                # Step 3: Extract data
-                add_log(f"🤖 Extracting data from {pdf_name}...")
+                log_messages.append(f"🔍 Analyzing {pdf_name}...")
+                log_messages.append(f"📄 Detecting financial statements in {pdf_name}...")
+                log_messages.append(f"🤖 Extracting data from {pdf_name}...")
 
                 final_state = process_pdf(
                     pdf_path,
                     selected_statements,
-                    log_callback=add_log,
+                    log_callback=log_messages.append,
                     enable_categorization=st.session_state.get("enable_categorization", True),
                 )
 
-                # Step 4: Validate
-                add_log(f"⚖️ Validating extraction quality for {pdf_name}...")
-
-                # Step 5: Generate outputs
-                add_log(f"📥 Generating Excel and JSON files for {pdf_name}...")
+                log_messages.append(f"⚖️ Validating extraction quality for {pdf_name}...")
+                log_messages.append(f"📥 Generating Excel and JSON files for {pdf_name}...")
 
                 all_results.append({
                     "pdf_name": pdf_name,
                     "pdf_path": pdf_path,
-                    "final_state": final_state
+                    "final_state": final_state,
                 })
-
-                # Update progress
                 progress_bar.progress((idx + 1) / pdf_count)
 
             status_text.text("✅ All files processed!")
             st.session_state["all_results"] = all_results
             st.session_state["processing_complete"] = True
             st.session_state["log_messages"] = log_messages
+            st.session_state["extraction_counted"] = False
             st.rerun()
 
 # -----------------------------------------------------------------------------
-# Results Section
+# Results + Metrics
 # -----------------------------------------------------------------------------
-if st.session_state.get("processing_complete"):
-    st.divider()
-    st.header("📋 Results")
-
-    # Show processing log summary
-    log_messages = st.session_state.get("log_messages", [])
-    if log_messages:
-        with st.expander("📝 View Processing Summary", expanded=False):
-            st.markdown("\n\n".join(log_messages))
-
-    all_results = st.session_state.get("all_results", [])
-
-    # Group results by status
-    successful_results = [r for r in all_results if not r["final_state"].get("error_message")]
-    failed_results = [r for r in all_results if r["final_state"].get("error_message")]
-
-    if failed_results:
-        st.markdown("### ❌ Failed Extractions")
-        for result in failed_results:
-            with st.expander(f"📄 {result['pdf_name']}"):
-                error_msg = result["final_state"].get("error_message", "Unknown error")
-                if "No financial" in error_msg or "No data" in error_msg:
-                    st.warning("⚠️ No financial statements detected in this PDF.")
-                else:
-                    st.error(f"❌ {error_msg}")
-
-    if successful_results:
-        st.markdown(f"### ✅ Successful Extractions ({len(successful_results)} file(s))")
-
-        for result in successful_results:
-            final_state = result["final_state"]
-            pdf_name = result["pdf_name"]
-            pdf_path = result["pdf_path"]
-
-            with st.expander(f"📄 {pdf_name}", expanded=len(successful_results) == 1):
-                if final_state.get("output_files"):
-                    st.success("✅ Extraction Complete!")
-
-                    # Side-by-side view: PDF + Extracted Data
-                    st.markdown("##### 🔍 Review Extraction")
-
-                    # Get extracted data from JSON files
-                    output_files = final_state["output_files"]
-                    statement_files = {}
-                    for f in output_files:
-                        f_path = Path(f)
-                        for st_type in StatementType:
-                            if st_type.value in f_path.name:
-                                if st_type not in statement_files:
-                                    statement_files[st_type] = {"json": None, "excel": None, "pdf_page": None}
-                                if f_path.suffix == ".json":
-                                    statement_files[st_type]["json"] = f_path
-                                elif f_path.suffix == ".xlsx":
-                                    statement_files[st_type]["excel"] = f_path
-
-                    # Create tabs for each statement type
-                    statement_tabs = {
-                        StatementType.BALANCE_SHEET: "Balance Sheet",
-                        StatementType.INCOME_STATEMENT: "Income Statement",
-                        StatementType.CASH_FLOW: "Cash Flow"
-                    }
-
-                    tab_keys = [k for k in statement_tabs.keys() if k in statement_files and statement_files[k]["json"]]
-                    if tab_keys:
-                        tabs = st.tabs([statement_tabs[k] for k in tab_keys])
-
-                        for tab, stmt_type in zip(tabs, tab_keys):
-                            with tab:
-                                json_file = statement_files[stmt_type]["json"]
-                                if json_file and json_file.exists():
-                                    # Load extracted data
-                                    import json
-                                    with open(json_file, "r") as f:
-                                        extracted_data = json.load(f)
-
-                                    # Side-by-side view
-                                    col1, col2 = st.columns([1, 1])
-
-                                    with col1:
-                                        st.markdown("**📄 Original PDF**")
-
-                                        # Get statement pages for this type
-                                        statement_pages = final_state.get("statement_pages", {})
-                                        pages_for_type = statement_pages.get(stmt_type, [])
-
-                                        # Get total page count for the PDF
-                                        from utils.pdf_utils import get_page_count
-                                        try:
-                                            total_pages = get_page_count(pdf_path)
-                                        except:
-                                            total_pages = 1
-
-                                        # Show all pages dropdown, with indicator for statement pages
-                                        all_page_options = []
-                                        # pages_for_type is already 1-indexed from the LLM detector
-                                        statement_page_nums = pages_for_type  # Already 1-indexed
-
-                                        for p in range(1, total_pages + 1):
-                                            if p in statement_page_nums:
-                                                all_page_options.append(f"Page {p} ✓")
-                                            else:
-                                                all_page_options.append(f"Page {p}")
-
-                                        # Default to first statement page if exists
-                                        default_idx = 0
-                                        if statement_page_nums:
-                                            default_idx = statement_page_nums[0] - 1  # Convert to 0-indexed for dropdown
-
-                                        selected = st.selectbox(
-                                            "Jump to page:",
-                                            options=all_page_options,
-                                            index=default_idx,
-                                            key=f"page_select_{pdf_name}_{stmt_type.value}"
-                                        )
-                                        page_num = int(selected.split()[1])  # Extract page number
-
-                                        # Render selected page
-                                        from utils.pdf_utils import rasterize_page_to_png
-
-                                        png_bytes = rasterize_page_to_png(pdf_path, page_num, dpi=150)
-
-                                        if png_bytes:
-                                            st.image(png_bytes, caption=f"Page {page_num}", width="stretch")
-
-                                        # Show statement pages indicator
-                                        if pages_for_type:
-                                            st.caption(f"✓ Statement detected on page(s): {', '.join(str(p) for p in statement_page_nums)}")
-                                            st.caption(f"Total PDF pages: {total_pages}")
-
-                                        st.download_button(
-                                            "📥 Download Full PDF",
-                                            Path(pdf_path).read_bytes(),
-                                            Path(pdf_path).name,
-                                            "application/pdf",
-                                            key=f"view_pdf_{pdf_name}_{stmt_type.value}",
-                                            width="stretch"
-                                        )
-
-                                    with col2:
-                                        st.markdown("**📊 Extracted Data**")
-                                        st.caption("Read-only preview — use Review & Correct section below to edit CoA mappings")
-
-                                        # Display extracted data as editable table
-                                        if extracted_data.get("sections"):
-                                            for section in extracted_data["sections"]:
-                                                section_name = section.get("name", "")
-                                                if section_name:
-                                                    st.markdown(f"**{section_name}**")
-
-                                                rows = section.get("rows", [])
-                                                if rows:
-                                                    # Build table data
-                                                    table_data = []
-                                                    for idx, row in enumerate(rows):
-                                                        label = row.get("label", "")
-                                                        values = row.get("values", [])
-                                                        is_subtotal = row.get("is_subtotal", False)
-
-                                                        row_data = {"Line Item": label}
-                                                        # Add period columns
-                                                        periods = extracted_data.get("periods", ["Period 1", "Period 2"])
-                                                        for i, period in enumerate(periods):
-                                                            val = values[i] if i < len(values) else ""
-                                                            row_data[period] = val
-
-                                                        table_data.append(row_data)
-
-                                                    if table_data:
-                                                        df = pd.DataFrame(table_data)
-                                                        st.dataframe(df, width="stretch", hide_index=True)
-
-                                    st.divider()
-
-                    st.markdown("##### 📥 Download Files")
-
-                    for st_type, files in statement_files.items():
-                        st.markdown(f"**{statement_options[st_type]}**")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if files["json"] and files["json"].exists():
-                                with open(files["json"], "rb") as f:
-                                    st.download_button(
-                                        "📥 JSON",
-                                        f.read(),
-                                        files["json"].name,
-                                        "application/json",
-                                        key=f"json_{pdf_name}_{st_type.value}",
-                                        width="stretch"
-                                    )
-                        with col2:
-                            if files["excel"] and files["excel"].exists():
-                                with open(files["excel"], "rb") as f:
-                                    st.download_button(
-                                        "📥 Excel",
-                                        f.read(),
-                                        files["excel"].name,
-                                        "application/vnd.ms-excel",
-                                        key=f"excel_{pdf_name}_{st_type.value}",
-                                        width="stretch"
-                                    )
-
-                    # AI Evaluation
-                    eval_result = final_state.get("evaluation_result", {})
-                    if eval_result:
-                        st.markdown("##### ⚖️ AI Evaluation")
-                        for st_type in StatementType:
-                            eval_data = eval_result.get(st_type) or eval_result.get(st_type.value)
-                            if eval_data:
-                                st.markdown(f"**{statement_options[st_type]}**")
-
-                                passed = eval_data.get("passed", False)
-                                scores = eval_data.get("scores", {})
-
-                                col1, col2 = st.columns([1, 2])
-                                with col1:
-                                    st.metric("Status", "✅ Pass" if passed else "❌ Review")
-                                with col2:
-                                    avg_score = sum(scores.values()) / len(scores) if scores else 0
-                                    st.metric("Avg Score", f"{avg_score:.1f}/10")
-
-                                if scores:
-                                    score_df = pd.DataFrame([
-                                        {"Criterion": k.replace("_", " ").title(), "Score": v}
-                                        for k, v in scores.items()
-                                    ])
-                                    st.dataframe(score_df, width="stretch", hide_index=True)
-
-                                    # Show feedback/reason for score
-                                    feedback = eval_data.get("feedback", "")
-                                    if feedback:
-                                        if not passed or avg_score < 7:
-                                            st.warning(f"⚠️ {feedback}")
-                                        else:
-                                            st.info(f"✅ {feedback}")
-
-                    # Original PDF download
-                    st.markdown("##### 📥 Original Document")
-                    if pdf_path and Path(pdf_path).exists():
-                        st.download_button(
-                            "📥 Download Original PDF",
-                            Path(pdf_path).read_bytes(),
-                            Path(pdf_path).name,
-                            "application/pdf",
-                            key=f"pdf_{pdf_name}",
-                            width="stretch"
-                        )
-
-                    # -------------------------------------------------------------------------
-                    # Categorization Evaluation
-                    # -------------------------------------------------------------------------
-                    cat_eval = final_state.get("cat_evaluation_result", {})
-                    if cat_eval:
-                        st.markdown("##### ⚖️ CoA Categorization Evaluation")
-                        for st_key, cat_data_eval in cat_eval.items():
-                            st_name = st_key.value if hasattr(st_key, 'value') else str(st_key)
-                            if st_name == "income_statement":
-                                cat_passed = cat_data_eval.get("passed", False)
-                                cat_scores = cat_data_eval.get("scores", {})
-                                cat_feedback = cat_data_eval.get("feedback", "")
-                                col1, col2 = st.columns([1, 2])
-                                with col1:
-                                    st.metric("Status", "✅ Pass" if cat_passed else "❌ Review")
-                                with col2:
-                                    avg_cat = sum(cat_scores.values()) / len(cat_scores) if cat_scores else 0
-                                    st.metric("Avg Score", f"{avg_cat:.1f}/10")
-                                if cat_feedback:
-                                    if not cat_passed:
-                                        st.warning(f"⚠️ {cat_feedback}")
-                                    else:
-                                        st.info(f"✅ {cat_feedback}")
-                                if cat_scores:
-                                    cat_score_df = pd.DataFrame([
-                                        {"Criterion": k.replace("_", " ").title(), "Score": v}
-                                        for k, v in cat_scores.items()
-                                    ])
-                                    st.dataframe(cat_score_df, width="stretch", hide_index=True)
-
-                    # -------------------------------------------------------------------------
-                    # Review & Correct (needs_review / low-confidence rows only)
-                    # -------------------------------------------------------------------------
-                    st.markdown("##### 📝 Review & Correct CoA Mappings")
-                    st.caption("Click the **Corrected Code** cell to open the dropdown and select a new account. Then click **💾 Save Corrections**.")
-
-                    # Load categorized data from JSON
-                    cat_json = statement_files.get(StatementType.INCOME_STATEMENT, {}).get("json")
-                    if cat_json and cat_json.exists():
-                        with open(cat_json, "r") as f:
-                            cat_data = json.load(f)
-
-                        review_items = []
-                        for section in cat_data.get("sections", []):
-                            section_name = section.get("name", "")
-                            for row in section.get("rows", []):
-                                cat = row.get("categorization", {})
-                                if not cat:
-                                    continue
-                                is_review = cat.get("needs_review", False)
-                                is_low = cat.get("confidence") in ("low", "unmatched")
-                                if is_review or is_low:
-                                    review_items.append({
-                                        "label": row.get("label", ""),
-                                        "section": section_name,
-                                        "current_code": str(cat.get("coa_code", "")),
-                                        "current_name": str(cat.get("coa_name", "")),
-                                        "confidence": str(cat.get("confidence", "")),
-                                        "reasoning": str(cat.get("reasoning", "")),
-                                    })
-
-                        if review_items:
-                            st.info(f"{len(review_items)} item(s) flagged for review")
-
-                            # Build CoA dropdown options as display strings (code - name)
-                            from coa.chart_of_accounts import COA_ACCOUNTS, get_account_by_code
-                            coa_display_options = []
-                            for code, acc in COA_ACCOUNTS.items():
-                                coa_display_options.append(f"{code} - {acc.name}")
-
-                            # Ensure every current code has a display option
-                            for item in review_items:
-                                display = f"{item['current_code']} - {item['current_name']}"
-                                if display not in coa_display_options:
-                                    coa_display_options.insert(0, display)
-
-                            review_df = pd.DataFrame(review_items)
-                            review_df["corrected_code"] = review_df.apply(
-                                lambda r: f"{r['current_code']} - {r['current_name']}", axis=1
-                            )
-
-                            edited_df = st.data_editor(
-                                review_df,
-                                column_config={
-                                    "corrected_code": st.column_config.SelectboxColumn(
-                                        "Corrected Code",
-                                        options=coa_display_options,
-                                    ),
-                                    "label": st.column_config.TextColumn("Line Item", disabled=True),
-                                    "section": st.column_config.TextColumn("Section", disabled=True),
-                                    "current_code": st.column_config.TextColumn("Current Code", disabled=True),
-                                    "current_name": st.column_config.TextColumn("Current Name", disabled=True),
-                                    "confidence": st.column_config.TextColumn("Confidence", disabled=True),
-                                    "reasoning": st.column_config.TextColumn("Reasoning", disabled=True),
-                                },
-                                width="stretch",
-                                hide_index=True,
-                                key=f"review_editor_{pdf_name}"
-                            )
-
-                            # Quick CoA reference (searchable)
-                            with st.expander("🔍 CoA Account Lookup (reference)", expanded=False):
-                                ref_search = st.text_input("Search account name or code", key=f"ref_search_{pdf_name}")
-                                ref_matches = [opt for opt in coa_display_options if ref_search.lower() in opt.lower()]
-                                if ref_search:
-                                    st.write(f"{len(ref_matches)} match(es)")
-                                    st.write("  ".join([f"`{opt}`" for opt in ref_matches[:20]]))
-                                else:
-                                    st.caption("Type above to search all 196 accounts")
-
-                            if st.button("💾 Save Corrections", key=f"save_corr_{pdf_name}", type="primary"):
-                                corrections = []
-                                for _, row in edited_df.iterrows():
-                                    orig_code = str(row["current_code"])
-                                    new_display = str(row["corrected_code"])
-                                    new_code = new_display.split(" - ")[0] if " - " in new_display else new_display
-                                    if new_code != orig_code:
-                                        acc = get_account_by_code(new_code)
-                                        corrections.append({
-                                            "label": row["label"],
-                                            "section": row["section"],
-                                            "wrong_code": orig_code,
-                                            "correct_code": new_code,
-                                            "correct_name": acc.name if acc else "",
-                                        })
-
-                                if corrections:
-                                    from utils.memory_manager import append_corrections
-                                    saved = append_corrections(pdf_name, corrections)
-                                    st.success(f"✅ {saved} new correction(s) saved to memory/{pdf_name}.md")
-                                else:
-                                    st.info("No changes to save.")
-                        else:
-                            st.success("✅ No items flagged for review — all mappings look good!")
-
-# -----------------------------------------------------------------------------
-# Metrics Dashboard
-# -----------------------------------------------------------------------------
-if st.session_state.get("show_metrics", False):
-    st.divider()
-    st.header("📈 Metrics Dashboard")
-
-    from utils.observability import get_observability
-    obs = get_observability()
-
-    recent_runs = obs.get_recent_runs(limit=20)
-
-    if recent_runs:
-        stats = obs.get_stats(days=7)
-
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Total Runs (7 days)", stats["total_runs"])
-        with col2:
-            st.metric("Success Rate", f"{stats['success_rate']}%")
-        with col3:
-            st.metric("Avg Duration", f"{stats['avg_duration_sec']:.1f}s")
-        with col4:
-            st.metric("Avg Retries", f"{stats['avg_retries_per_run']:.2f}")
-
-        st.divider()
-
-        st.subheader("📋 Recent Runs")
-        if recent_runs:
-            runs_df = pd.DataFrame(recent_runs)
-            display_df = runs_df[[
-                "timestamp", "pdf_file", "success", "total_duration_sec",
-                "llm_calls", "retry_count"
-            ]].copy()
-            display_df.columns = ["Timestamp", "PDF", "Success", "Duration (s)", "LLM Calls", "Retries"]
-            display_df["Timestamp"] = pd.to_datetime(display_df["Timestamp"]).dt.strftime("%Y-%m-%d %H:%M")
-            st.dataframe(display_df, width="stretch", hide_index=True)
-
-        st.divider()
-        st.subheader("📊 Trends")
-
-        if len(recent_runs) > 1:
-            duration_data = pd.DataFrame(recent_runs)[["timestamp", "total_duration_sec"]].copy()
-            duration_data["timestamp"] = pd.to_datetime(duration_data["timestamp"])
-            duration_data = duration_data.sort_values("timestamp")
-            st.line_chart(duration_data.set_index("timestamp")["total_duration_sec"])
-            st.caption("Extraction duration over time")
-    else:
-        st.info("No metrics data yet. Run an extraction to see metrics.")
+render_results()
+render_metrics_dashboard()

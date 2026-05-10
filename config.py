@@ -41,6 +41,16 @@ class Config:
     # Output settings
     OUTPUT_FORMATS = ["json", "excel"]  # Supported output formats
 
+    # Guardrail settings
+    GUARDRAIL_MAX_TOKENS_PER_RUN = int(os.getenv("GUARDRAIL_MAX_TOKENS_PER_RUN", "200000"))
+    GUARDRAIL_MAX_COST_PER_RUN = float(os.getenv("GUARDRAIL_MAX_COST_PER_RUN", "3.00"))
+    GUARDRAIL_MAX_CONCURRENT_RUNS = int(os.getenv("GUARDRAIL_MAX_CONCURRENT_RUNS", "4"))
+    GUARDRAIL_QUALITY_SCORE_THRESHOLD = float(os.getenv("GUARDRAIL_QUALITY_SCORE_THRESHOLD", "5.0"))
+    DISABLE_GUARDRAILS = os.getenv("DISABLE_GUARDRAILS", "false").lower() == "true"
+
+    # Orientation correction for scanned / inverted PDF pages
+    AUTO_CORRECT_ORIENTATION = os.getenv("AUTO_CORRECT_ORIENTATION", "true").lower() == "true"
+
     # Observability settings
     ENABLE_OBSERVABILITY = os.getenv("ENABLE_OBSERVABILITY", "true").lower() == "true"
     METRICS_DIR = None  # Set at runtime

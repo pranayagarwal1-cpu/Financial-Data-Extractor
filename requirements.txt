@@ -1,9 +1,29 @@
-langgraph>=0.2.0
-langchain>=0.3.0
-langchain-community>=0.3.0
-openpyxl>=3.1.0
-pandas>=2.0.0
-pdfplumber>=0.11.0
-pdf2image>=1.16.0
-ollama>=0.4.0
-streamlit>=1.30.0
+# Pinned to versions known to work together. To upgrade, run `pip install -U <pkg>`,
+# verify the suite still passes, then update the pin here.
+
+# Workflow / agent framework
+langgraph==0.6.11
+langchain==0.3.29
+langchain-community==0.3.31
+
+# LLM clients
+ollama==0.6.2
+anthropic>=0.40.0,<1.0.0
+
+# Data validation
+pydantic>=2.0
+
+# PDF + data
+pdfplumber==0.11.8
+pdf2image==1.17.0
+pandas==2.3.3
+openpyxl==3.1.5
+
+# Frontend
+streamlit==1.50.0
+
+# Tests
+pytest>=8.0.0,<9.0.0
+
+# Image orientation / OCR helpers (optional but recommended)
+pytesseract>=0.3.10

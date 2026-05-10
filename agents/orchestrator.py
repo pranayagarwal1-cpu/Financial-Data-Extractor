@@ -18,6 +18,8 @@ from pathlib import Path
 from utils.pdf_utils import get_page_count, rasterize_page
 from utils.llm_detector import find_statement_pages_llm
 from utils.vlm_utils import StatementType
+from utils.guardrails import get_guardrails
+from utils.exceptions import InputValidationError
 from config import Config
 
 
@@ -95,6 +97,20 @@ def orchestrator_node(state: dict) -> dict:
     if not pdf_path:
         return {"error_message": "No input PDF path provided"}
 
+    # Input validation — fail fast before any LLM calls or temp directory creation
+    if not Config.DISABLE_GUARDRAILS:
+        gr = get_guardrails()
+        try:
+            gr.input.validate(pdf_path)
+        except InputValidationError as e:
+            logging.error(f"Input validation failed: {e}")
+            print(f"❌ Input validation failed: {e}")
+            return {
+                "error_message": str(e),
+                "statement_pages": {},
+                "guardrail_flags": ["input_validation_failed"]
+            }
+
     # Start observability run if not already started
     run_id = state.get("run_id")
     if not run_id:
@@ -158,11 +174,13 @@ def should_retry(state: dict) -> str:
     Returns:
         'extractor' to retry extraction,
         'categorizer' to proceed to categorization (if enabled),
-        'save_outputs' to skip categorization and save directly
+        'save_outputs' to skip categorization and save directly,
+        'end' to terminate without saving (degraded quality or total failure)
     """
     evaluation = state.get("evaluation_result", {})
     retry_count = state.get("retry_count", 0)
     enable_categorization = state.get("enable_categorization", True)
+    extracted_data = state.get("extracted_data", {})
 
     # Check if ALL statements passed evaluation
     all_passed = all(
@@ -178,14 +196,27 @@ def should_retry(state: dict) -> str:
         print("📦 Categorization skipped — saving extracted data directly.")
         return "save_outputs"
 
+    # Quality degradation guardrail — do NOT save degraded output
+    guardrail_flags = state.get("guardrail_flags", [])
+    if not Config.DISABLE_GUARDRAILS and "quality_degraded" in guardrail_flags:
+        logging.error("Quality degraded — terminating without saving output")
+        print("❌ Quality degraded — output will NOT be saved")
+        return "end"
+
+    # If no data exists after extraction failure, do not retry
+    if not extracted_data:
+        logging.error("No extracted data available — terminating without saving")
+        print("❌ No extracted data available — output will NOT be saved")
+        return "end"
+
     if retry_count < Config.MAX_RETRIES:
         logging.warning(f"Extraction quality insufficient, retrying ({retry_count + 1}/{Config.MAX_RETRIES})")
         print(f"⚠️  Extraction quality insufficient. Retrying ({retry_count + 1}/{Config.MAX_RETRIES})…")
         return "extractor"
 
-    logging.error("Max retries reached. DELIBERATELY saving raw extracted data without categorization.")
-    print("❌ Max retries reached. DELIBERATELY saving raw extracted data without categorization.")
-    return "save_outputs"
+    logging.error("Max retries reached. Output will NOT be saved.")
+    print("❌ Max retries reached. Output will NOT be saved.")
+    return "end"
 
 
 def should_retry_categorization(state: dict) -> str:
@@ -249,9 +280,16 @@ def save_outputs(state: dict) -> dict:
     if not data_to_save:
         data_to_save = state.get("extracted_data", {})
 
+    guardrail_flags = state.get("guardrail_flags", [])
+
     if not data_to_save:
-        logging.error("No data to save")
-        return {"error_message": "No data to save"}
+        error = state.get("error_message", "No data to save")
+        logging.error(f"No data to save: {error}")
+        return {
+            "error_message": error,
+            "guardrail_flags": guardrail_flags,
+            "run_id": run_id
+        }
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -267,6 +305,15 @@ def save_outputs(state: dict) -> dict:
         # Save JSON
         json_path = str(OUTPUT_DIR / f"{pdf_name}_{statement_name}_{timestamp}.json")
         json_content = format_json_output(data)
+
+        # Inject guardrail flags into JSON metadata if present
+        if guardrail_flags:
+            import json as _json
+            parsed = _json.loads(json_content)
+            if isinstance(parsed, dict):
+                parsed["guardrail_flags"] = guardrail_flags
+            json_content = _json.dumps(parsed, indent=2)
+
         with open(json_path, "w") as f:
             f.write(json_content)
         logging.info(f"JSON saved: {json_path}")
@@ -280,15 +327,24 @@ def save_outputs(state: dict) -> dict:
         print(f"💾 {statement_name.replace('_', ' ').title()} Excel: {excel_path}")
         output_files.append(excel_path)
 
+    # Determine success based on guardrail flags
+    failure_flags = {"quality_degraded", "hallucination_warning", "input_validation_failed"}
+    has_failure_flag = bool(failure_flags.intersection(guardrail_flags))
+    run_success = not has_failure_flag
+
     # Log node timing and end the run
     duration_ms = (time.time() - start_time) * 1000
     obs.log_node_timing("save_outputs", duration_ms, run_id)
     obs.end_run(
         run_id=run_id,
-        success=True,
+        success=run_success,
         retry_count=state.get("retry_count", 0),
         cat_retry_count=state.get("cat_retry_count", 0),
         review_queue_count=len(state.get("review_queue", [])),
     )
 
-    return {"output_files": output_files, "run_id": run_id}
+    return {
+        "output_files": output_files,
+        "run_id": run_id,
+        "guardrail_flags": guardrail_flags
+    }

@@ -15,18 +15,31 @@ Responsibilities:
 
 import os
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Optional, List, Dict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from utils.pdf_utils import rasterize_page
+from utils.pdf_utils import rasterize_page, _ocr_image
 from utils.vlm_utils import vlm_extract_statement, StatementType
 from config import Config
 
 # Base directory
 BASE_DIR = Path(__file__).parent.parent
 TMP_DIR = BASE_DIR / "tmp"
+
+
+def _extract_page_text(pdf_path: str, page_num: int) -> str:
+    """Extract raw text from a single PDF page (1-indexed) using pdfplumber."""
+    try:
+        import pdfplumber
+        with pdfplumber.open(pdf_path) as pdf:
+            if 1 <= page_num <= len(pdf.pages):
+                return pdf.pages[page_num - 1].extract_text() or ""
+    except Exception as e:
+        logging.warning(f"Could not extract text from page {page_num}: {e}")
+    return ""
 
 
 def get_temp_dir(pdf_path: str) -> str:
@@ -113,6 +126,20 @@ def extractor_node(state: dict) -> dict:
                 f"statement type(s) need re-extraction"
             )
 
+    # Extract source page texts for hallucination guardrail
+    page_texts: Dict[StatementType, List[str]] = {}
+    prev_page_texts = state.get("page_texts", {})
+    for st in statement_types:
+        pages = statement_pages.get(st, [])
+        if st in types_to_extract:
+            texts = []
+            for page_num in pages:
+                text = _extract_page_text(pdf_path, page_num)
+                texts.append(text)
+            page_texts[st] = texts
+        elif st in prev_page_texts:
+            page_texts[st] = prev_page_texts[st]
+
     # Get temp directory for this extraction
     tmp_dir = get_temp_dir(pdf_path)
     cache_dir = os.path.join(tmp_dir, "image_cache")
@@ -133,7 +160,10 @@ def extractor_node(state: dict) -> dict:
 
         # Only rasterize if not cached
         if not os.path.exists(img_path):
-            img_path = rasterize_page(pdf_path, page_num, ext_prefix, dpi=Config.EXTRACT_DPI)
+            img_path = rasterize_page(
+                pdf_path, page_num, ext_prefix, dpi=Config.EXTRACT_DPI,
+                auto_rotate=Config.AUTO_CORRECT_ORIENTATION
+            )
 
         try:
             feedback = feedback_map.get(statement_type, "")
@@ -160,7 +190,19 @@ def extractor_node(state: dict) -> dict:
         print(f"\n📊 Extracting {statement_type.value.replace('_', ' ').title()}…")
 
         statement_data: Optional[dict] = None
-        existing_section_names = set()
+        existing_section_names: set[str] = set()
+        normalized_to_actual: dict[str, str] = {}
+
+        def _normalize_section_name(name: str) -> str:
+            """Normalize for matching: lower, strip continuation suffixes."""
+            name = name.strip().lower()
+            name = re.sub(r"\s*\(continued\)", "", name, flags=re.IGNORECASE)
+            name = re.sub(r"\s*-\s*continued", "", name, flags=re.IGNORECASE)
+            return name
+
+        def _row_key(row: dict) -> tuple:
+            """Unique key for deduplication."""
+            return (row.get("label", ""), tuple(row.get("values", [])))
 
         for page_num in pages:
             print(f"  Extracting page {page_num}…")
@@ -172,17 +214,29 @@ def extractor_node(state: dict) -> dict:
             if statement_data is None:
                 statement_data = page_data
                 existing_section_names = {s["name"] for s in statement_data.get("sections", [])}
+                normalized_to_actual = {
+                    _normalize_section_name(s["name"]): s["name"]
+                    for s in statement_data.get("sections", [])
+                }
             else:
                 # Merge continuation pages
                 for section in page_data.get("sections", []):
                     section_name = section.get("name", "")
-                    if section_name in existing_section_names:
+                    normalized = _normalize_section_name(section_name)
+
+                    if normalized in normalized_to_actual:
+                        actual_name = normalized_to_actual[normalized]
                         for s in statement_data.get("sections", []):
-                            if s["name"] == section_name:
-                                s["rows"].extend(section.get("rows", []))
+                            if s["name"] == actual_name:
+                                existing_rows = {_row_key(r) for r in s.get("rows", [])}
+                                for row in section.get("rows", []):
+                                    if _row_key(row) not in existing_rows:
+                                        s["rows"].append(row)
+                                        existing_rows.add(_row_key(row))
                     else:
                         statement_data["sections"].append(section)
                         existing_section_names.add(section_name)
+                        normalized_to_actual[normalized] = section_name
 
                 # Merge periods if new ones appeared
                 for p in page_data.get("periods", []):
@@ -199,13 +253,33 @@ def extractor_node(state: dict) -> dict:
         return (statement_type, statement_data)
 
     # Extract statement types in parallel (on retry, only failed types)
-    with ThreadPoolExecutor(max_workers=len(types_to_extract)) as executor:
+    # Cap workers to 3 to prevent overwhelming Ollama
+    with ThreadPoolExecutor(max_workers=min(len(types_to_extract), 3)) as executor:
         futures = {executor.submit(extract_statement_type, st): st for st in types_to_extract}
 
         for future in as_completed(futures):
             statement_type, data = future.result()
             if data:
                 all_data[statement_type] = data
+
+    # OCR fallback: for scanned PDFs where pdfplumber text is empty,
+    # run OCR on the cached rasterized images to build ground-truth text
+    # for the hallucination guardrail in the evaluator.
+    for st, texts in list(page_texts.items()):
+        pages = statement_pages.get(st, [])
+        updated_texts = []
+        for idx, text in enumerate(texts):
+            if len(text.strip()) < 50 and idx < len(pages):
+                page_num = pages[idx]
+                cached_img = os.path.join(cache_dir, f"p{page_num:04d}.jpg")
+                if os.path.exists(cached_img):
+                    ocr_text = _ocr_image(cached_img)
+                    if len(ocr_text.strip()) >= 50:
+                        logging.info(f"  OCR fallback for page {page_num}: {len(ocr_text)} chars")
+                        updated_texts.append(ocr_text)
+                        continue
+            updated_texts.append(text)
+        page_texts[st] = updated_texts
 
     if all_data:
         # Log node timing
@@ -215,13 +289,18 @@ def extractor_node(state: dict) -> dict:
         return {
             "extracted_data": all_data,
             "retry_count": new_retry_count,
-            "run_id": run_id
+            "run_id": run_id,
+            "page_texts": page_texts,
         }
     else:
         logging.error("Extraction returned no data")
         print("❌ Extraction returned no data.")
+        # IMPORTANT: always return extracted_data (even if empty) so LangGraph
+        # overwrites any stale data from a previous attempt.
         return {
+            "extracted_data": {},
             "error_message": "Extraction returned no data",
             "retry_count": new_retry_count,
-            "run_id": run_id
+            "run_id": run_id,
+            "page_texts": page_texts,
         }

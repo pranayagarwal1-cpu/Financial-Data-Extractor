@@ -364,7 +364,7 @@ def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: b
     failed_batches = []
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    with ThreadPoolExecutor(max_workers=len(batches)) as executor:
+    with ThreadPoolExecutor(max_workers=min(len(batches), 4)) as executor:
         future_to_batch = {
             executor.submit(_llm_match_single_batch, batch, run_id, is_retry, practice_id): idx
             for idx, batch in enumerate(batches)

@@ -3,7 +3,6 @@
 import os
 import atexit
 
-_api_key = os.getenv("ANTHROPIC_API_KEY")
 _client = None
 
 
@@ -11,8 +10,17 @@ def _get_client():
     """Lazy-load Anthropic client to avoid import-time dependency."""
     global _client
     if _client is None:
+        # Read the API key here, not at module import — env vars set by
+        # python-dotenv, Streamlit secrets, or callers after import are
+        # otherwise silently ignored and surface as cryptic auth errors.
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "ANTHROPIC_API_KEY is not set. Add it to your environment "
+                "or .env file before calling an Anthropic model."
+            )
         from anthropic import Anthropic
-        _client = Anthropic(api_key=_api_key)
+        _client = Anthropic(api_key=api_key)
     return _client
 
 
