@@ -42,6 +42,29 @@ def _extract_page_text(pdf_path: str, page_num: int) -> str:
     return ""
 
 
+def _save_ocr_texts(pdf_path: str, statement_pages: dict, page_texts: dict):
+    """
+    Persist OCR/page text to tmp/extract_{name}/ocr/ for manual inspection.
+
+    Saves one .txt file per page per statement type so users can review
+    the exact ground-truth text used by hallucination checks.
+    """
+    pdf_name = Path(pdf_path).stem
+    ocr_dir = TMP_DIR / f"extract_{pdf_name}" / "ocr"
+    ocr_dir.mkdir(parents=True, exist_ok=True)
+
+    for st, texts in page_texts.items():
+        pages = statement_pages.get(st, [])
+        for idx, text in enumerate(texts):
+            page_num = pages[idx] if idx < len(pages) else (idx + 1)
+            fname = f"{st.value}_p{page_num:04d}.txt"
+            path = ocr_dir / fname
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text if text else "")
+    logging.info(f"OCR text saved to: {ocr_dir}")
+    print(f"📄 OCR text saved to: {ocr_dir}")
+
+
 def get_temp_dir(pdf_path: str) -> str:
     """Get a unique temp directory for a PDF file."""
     pdf_name = Path(pdf_path).stem
@@ -322,8 +345,16 @@ def extractor_node(state: dict) -> dict:
         for idx, text in enumerate(texts):
             if len(text.strip()) < 50 and idx < len(pages):
                 page_num = pages[idx]
-                cached_img = os.path.join(cache_dir, f"p{page_num:04d}.jpg")
-                if os.path.exists(cached_img):
+                # pdftoppm names files like extract_{type}_p0001-1.jpg
+                # Match the prefix pattern used in extract_single_page
+                ext_prefix = os.path.join(cache_dir, f"extract_{st.value}_p{page_num:04d}")
+                from pathlib import Path
+                matches = sorted(Path(cache_dir).glob(f"extract_{st.value}_p{page_num:04d}-*.jpg"))
+                if not matches:
+                    # Fallback: look for any jpg in cache dir containing page number
+                    matches = sorted(Path(cache_dir).glob(f"*p{page_num:04d}*.jpg"))
+                if matches:
+                    cached_img = str(matches[-1])
                     ocr_text = _ocr_image(cached_img)
                     if len(ocr_text.strip()) >= 50:
                         logging.info(f"  OCR fallback for page {page_num}: {len(ocr_text)} chars")
@@ -331,6 +362,9 @@ def extractor_node(state: dict) -> dict:
                         continue
             updated_texts.append(text)
         page_texts[st] = updated_texts
+
+    # Persist OCR text for manual inspection
+    _save_ocr_texts(pdf_path, statement_pages, page_texts)
 
     if all_data:
         # Log node timing

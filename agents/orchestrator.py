@@ -237,6 +237,13 @@ def should_retry(state: dict) -> str:
         print(f"⚠️  Extraction quality insufficient. Retrying ({retry_count + 1}/{Config.MAX_RETRIES})…")
         return "extractor"
 
+    if Config.FORCE_SAVE_ON_FAILURE:
+        logging.warning("Max retries reached, but FORCE_SAVE_ON_FAILURE is enabled — saving anyway")
+        print("⚠️  Max retries reached. FORCE_SAVE_ON_FAILURE is enabled — saving output anyway.")
+        if enable_categorization:
+            return "categorizer"
+        return "save_outputs"
+
     logging.error("Max retries reached. Output will NOT be saved.")
     print("❌ Max retries reached. Output will NOT be saved.")
     return "end"

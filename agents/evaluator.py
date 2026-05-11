@@ -225,25 +225,43 @@ def _run_numeric_precheck(data: dict, statement_type: StatementType) -> tuple[fl
     return score, feedback
 
 
-def _calculate_missing_ratio(data: dict) -> float:
-    """Calculate the ratio of missing/null values in the extraction."""
+def _calculate_missing_values(data: dict) -> tuple[float, list[str]]:
+    """
+    Calculate the ratio of missing/null values and return individual findings.
+
+    Returns (missing_ratio, list_of_descriptions).
+    Each description is like: "Row 'Telephone' period 2025: value is empty"
+    """
     total_values = 0
     missing_values = 0
+    descriptions: list[str] = []
+    periods = data.get("periods", [])
 
     for section in data.get("sections", []):
+        section_name = section.get("name", "")
         for row in section.get("rows", []):
-            for val in row.get("values", []):
+            label = row.get("label", "")
+            for idx, val in enumerate(row.get("values", [])):
                 total_values += 1
                 if val is None or val == "" or val == "null":
                     missing_values += 1
+                    period_label = periods[idx] if idx < len(periods) else f"col {idx + 1}"
+                    descriptions.append(
+                        f"Row '{label}' (section '{section_name}') period {period_label}: value is empty"
+                    )
 
     if total_values == 0:
-        return 1.0
-    return missing_values / total_values
+        return 1.0, descriptions
+    return missing_values / total_values, descriptions
 
 
 def _has_required_sections(data: dict, statement_type: StatementType) -> tuple[bool, list[str]]:
-    """Check if all required sections/rows are present for the statement type."""
+    """Check if all required sections/rows are present for the statement type.
+
+    Uses keyword *groups* (list of lists) where at least one keyword from each
+    group must match. This handles synonyms like Revenue/Income and
+    Net Income/Net Profit/Net Earnings.
+    """
     section_names = {s.get("name", "").upper() for s in data.get("sections", [])}
 
     # Also check row labels — some statements put key totals (e.g. Net Income)
@@ -253,24 +271,37 @@ def _has_required_sections(data: dict, statement_type: StatementType) -> tuple[b
         for row in section.get("rows", []):
             all_labels += " " + row.get("label", "").upper()
 
-    required_keywords = {
-        StatementType.BALANCE_SHEET: ["ASSET", "LIABILIT", "EQUITY"],
-        StatementType.INCOME_STATEMENT: ["REVENUE", "EXPENSE", "NET INCOME"],
-        StatementType.CASH_FLOW: ["OPERATING", "INVESTING", "FINANCING"],
+    # Each inner list is a group of synonyms — at least one must match
+    required_groups = {
+        StatementType.BALANCE_SHEET: [
+            ["ASSET"],
+            ["LIABILIT"],
+            ["EQUITY"],
+        ],
+        StatementType.INCOME_STATEMENT: [
+            ["REVENUE", "INCOME"],
+            ["EXPENSE"],
+            ["NET INCOME", "NET PROFIT", "NET EARNINGS"],
+        ],
+        StatementType.CASH_FLOW: [
+            ["OPERATING"],
+            ["INVESTING"],
+            ["FINANCING"],
+        ],
     }
 
-    keywords = required_keywords.get(statement_type, [])
-    found_sections = []
-    missing_sections = []
+    groups = required_groups.get(statement_type, [])
+    missing_groups = []
 
-    for keyword in keywords:
-        found = any(keyword in name for name in section_names) or keyword in all_labels
-        if found:
-            found_sections.append(keyword)
-        else:
-            missing_sections.append(keyword)
+    for group in groups:
+        found = any(
+            any(keyword in name for name in section_names) or keyword in all_labels
+            for keyword in group
+        )
+        if not found:
+            missing_groups.append("/".join(group))
 
-    return len(missing_sections) == 0, missing_sections
+    return len(missing_groups) == 0, missing_groups
 
 
 def _find_row_value(data: dict, keywords: list[str], require_subtotal: bool = True) -> Optional[Decimal]:
@@ -403,24 +434,20 @@ def _normalize_indent_levels(data: dict) -> dict:
     return data
 
 
-def _run_section_sum_checks(data: dict, statement_type: StatementType) -> tuple[bool, str]:
+def _run_section_sum_checks(data: dict, statement_type: StatementType) -> list[tuple[str, bool]]:
     """
     Verify additive subtotals equal the sum of their child line items.
 
-    Uses `indent_level` when the VLM provides it (indent_level > 0 = detail row).
-    Falls back to subtotal-boundary grouping when indent_level is absent or flat.
+    Returns a list of (message, is_advisory_only) tuples.
+    - is_advisory_only=True  → discrepancy is within tolerance (reported as ADVISORY)
+    - is_advisory_only=False → discrepancy exceeds tolerance (reported as FAIL)
 
-    Handles three hierarchy patterns:
-      1. Leaf subtotal: sums detail rows (indent_level > 0) directly above it.
-      2. Parent subtotal: sums preceding subtotals in the same group.
-      3. Grand-total: may equal sum of all leaf/parent subtotals.
-
-    Only checks sections where subtotals are expected to be sums (COGS, Expenses,
-    Assets, Liabilities, Equity). Skips derived metrics (Gross Margin, Operating
-    Income, Net Income).
+    All discrepancies are reported, no matter how small.
     """
     additive_section_keywords = ["cost", "expense", "asset", "liabilit", "equity"]
     non_additive_total_keywords = ["gross", "margin", "operating income", "net income", "profit"]
+
+    discrepancies: list[tuple[str, bool]] = []
 
     for section in data.get("sections", []):
         section_name = section.get("name", "").lower()
@@ -434,19 +461,15 @@ def _run_section_sum_checks(data: dict, statement_type: StatementType) -> tuple[
 
         is_additive_section = any(kw in section_name for kw in additive_section_keywords)
 
-        # Detect whether indent_level is meaningfully populated (> 0 on any row)
         has_indent_data = any(
             row.get("indent_level", 0) > 0 for row in rows
         )
 
-        # --- Build subtotal groups ---
-        # Each entry: {"label": ..., "values": [...], "leaf_sums": [...], "parent_sums": [...]}
         subtotals_in_section = []
         seen_subtotals_stack: list[list[Decimal]] = []
         has_negative_line_item = False
 
         if has_indent_data:
-            # Indent-aware grouping: only rows with indent_level > 0 are leaf children
             running_leaf_sums = [Decimal("0") for _ in range(num_periods)]
 
             for row in rows:
@@ -469,7 +492,6 @@ def _run_section_sum_checks(data: dict, statement_type: StatementType) -> tuple[
                     seen_subtotals_stack.append(parsed_vals)
                     running_leaf_sums = [Decimal("0") for _ in range(num_periods)]
                 elif indent > 0:
-                    # Detail row — add to running leaf sum
                     for i, v in enumerate(vals):
                         if i < num_periods:
                             parsed = _parse_amount(v)
@@ -479,10 +501,8 @@ def _run_section_sum_checks(data: dict, statement_type: StatementType) -> tuple[
                                 else:
                                     running_leaf_sums[i] += parsed
                 else:
-                    # Header row (indent 0, not subtotal) — ignore for sums
                     pass
         else:
-            # Fallback: flat grouping — all non-subtotal rows since previous subtotal
             running_leaf_sums = [Decimal("0") for _ in range(num_periods)]
 
             for row in rows:
@@ -516,7 +536,6 @@ def _run_section_sum_checks(data: dict, statement_type: StatementType) -> tuple[
         if not subtotals_in_section:
             continue
 
-        # For non-additive sections, only enforce if subtotal explicitly says "total"
         if not is_additive_section:
             subtotals_in_section = [s for s in subtotals_in_section if "total" in s["label"].lower()]
             if not subtotals_in_section:
@@ -530,49 +549,54 @@ def _run_section_sum_checks(data: dict, statement_type: StatementType) -> tuple[
                 leaf_sum = sub["leaf_sums"][i]
                 parent_sum = sub["parent_sums"][i]
                 tolerance = _equation_tolerance(sub_val)
-                if _materiality_gate(abs(sub_val - leaf_sum)) or _materiality_gate(abs(sub_val - parent_sum)):
-                    continue
 
-                # 1. Leaf-level match: subtotal equals detail rows directly above it
-                if leaf_sum != 0:
-                    if abs(sub_val - leaf_sum) <= tolerance:
-                        continue
-
-                # 2. Parent-level match: subtotal equals sum of preceding subtotals
-                if parent_sum != 0:
-                    if abs(sub_val - parent_sum) <= tolerance:
-                        continue
-
-                # 3. Negative line items → skip strict enforcement
-                if has_negative_line_item:
-                    continue
-
-                # 4. Structural complexity heuristics
-                if sub_val == 0 and leaf_sum != 0:
-                    continue
-
-                if sub_val != 0:
-                    leaf_ratio = abs(leaf_sum) / abs(sub_val) if leaf_sum != 0 else Decimal("0")
-                    parent_ratio = abs(parent_sum) / abs(sub_val) if parent_sum != 0 else Decimal("0")
-                    if (leaf_ratio > Decimal("2") or leaf_ratio < Decimal("0.5")) and \
-                       (parent_ratio > Decimal("2") or parent_ratio < Decimal("0.5")):
-                        continue
-
-                # No match
+                # Determine the best expected value
                 expected = leaf_sum if leaf_sum != 0 else parent_sum
+                if expected == 0:
+                    continue
+
                 diff = abs(sub_val - expected)
+
+                # Materiality gate: skip reporting if under $1K
+                if _materiality_gate(diff):
+                    continue
+
                 period_label = (
                     data.get("periods", [f"col {i + 1}"])[i]
                     if i < len(data.get("periods", []))
                     else f"col {i + 1}"
                 )
-                return False, (
-                    f"Section '{section.get('name', '')}' subtotal '{sub['label']}' "
-                    f"does not sum: {sub_val} ≠ {expected} (expected leaf sum {leaf_sum} or "
-                    f"parent sum {parent_sum}) for period {period_label} (diff: {diff})"
-                )
 
-    return True, ""
+                # Within tolerance → ADVISORY (still report it)
+                if diff <= tolerance:
+                    discrepancies.append((
+                        f"Section '{section.get('name', '')}' subtotal '{sub['label']}' "
+                        f"period {period_label}: extracted {sub_val} vs expected {expected} "
+                        f"(diff: {diff}, within tolerance)",
+                        True,
+                    ))
+                    continue
+
+                # Negative line items present → ADVISORY only
+                # (e.g. COGS where Ending Inventories are subtracted)
+                if has_negative_line_item:
+                    discrepancies.append((
+                        f"Section '{section.get('name', '')}' subtotal '{sub['label']}' "
+                        f"period {period_label}: extracted {sub_val} vs expected {expected} "
+                        f"(diff: {diff}, exceeds tolerance; negative line items present — "
+                        f"may be intentional subtraction)",
+                        True,
+                    ))
+                    continue
+
+                discrepancies.append((
+                    f"Section '{section.get('name', '')}' subtotal '{sub['label']}' "
+                    f"period {period_label}: extracted {sub_val} vs expected {expected} "
+                    f"(diff: {diff}, exceeds tolerance)",
+                    False,
+                ))
+
+    return discrepancies
 
 
 def _equation_tolerance(value: Decimal) -> Decimal:
@@ -699,13 +723,65 @@ def _value_forms(val: str) -> set[str]:
     return forms
 
 
+def _normalize_for_matching(text: str) -> str:
+    """
+    Normalize text for fuzzy ground-truth matching.
+
+    Removes all whitespace, dashes, underscores, and newlines, then lowercases.
+    This handles PDFs where the text layer has stripped spaces
+    (e.g. 'TotalTradingIncome' vs 'Total Trading Income').
+    """
+    return text.lower().replace(" ", "").replace("-", "").replace("_", "").replace("\n", "").replace("\t", "").replace("&", "")
+
+
 def _value_in_text(val: str, text: str) -> bool:
     """Check if a value (in any common form) appears in the page text."""
-    text_lower = text.lower()
+    text_norm = _normalize_for_matching(text)
     for form in _value_forms(val):
-        if form.lower() in text_lower:
+        if _normalize_for_matching(form) in text_norm:
             return True
     return False
+
+
+def _ocr_text_quality(page_texts: list[str]) -> str:
+    """
+    Assess OCR text quality to decide how strict hallucination checks should be.
+
+    Returns:
+        'good'     — OCR text has normal spacing and punctuation
+        'poor'     — OCR text has stripped spaces (e.g. 'TotalTradingIncome')
+        'garbled'  — OCR text from pytesseract is severely corrupted
+                     (high ratio of non-word artifacts, random symbols)
+    """
+    all_text = "\n".join(page_texts)
+    if not all_text:
+        return "good"
+
+    # Heuristic 1: stripped spaces
+    space_count = all_text.count(" ")
+    char_count = len(all_text.replace("\n", "").replace(" ", ""))
+    if char_count > 0 and space_count / char_count < 0.05:
+        return "poor"
+
+    # Heuristic 2: garbled pytesseract output
+    # Count words with high density of garbage characters
+    words = all_text.split()
+    if not words:
+        return "good"
+
+    ALLOWED = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789()-.,$%&/ ")
+    garbled_words = 0
+    for word in words:
+        if not word:
+            continue
+        good_chars = sum(1 for c in word if c in ALLOWED)
+        if good_chars / len(word) < 0.6:
+            garbled_words += 1
+
+    if garbled_words / len(words) > 0.03:
+        return "garbled"
+
+    return "good"
 
 
 def _run_hallucination_check(
@@ -747,6 +823,8 @@ def _run_hallucination_check(
     if not all_values:
         return True, ""
 
+    ocr_quality = _ocr_text_quality(page_texts)
+
     # Tier 1: subtotals must be present (strict)
     missing_subtotals = 0
     for val in subtotal_values:
@@ -756,10 +834,16 @@ def _run_hallucination_check(
                 # Content section D2/D3 owns the penalty for missing values
                 ledger.charge("D3", f"value:{val}")
 
-    if missing_subtotals > 3:
+    # When OCR quality is poor (stripped text layer), downgrade to advisory
+    if missing_subtotals > 3 and ocr_quality == "good":
         return (
             False,
             f"{missing_subtotals}/{len(subtotal_values)} subtotal values not found in source page text"
+        )
+    elif missing_subtotals > 0:
+        return (
+            True,
+            f"{missing_subtotals}/{len(subtotal_values)} subtotal values not found (OCR quality: {ocr_quality}) — treated as advisory"
         )
 
     # Tier 2: all values should be present (lenient)
@@ -770,11 +854,16 @@ def _run_hallucination_check(
             if ledger:
                 ledger.charge("D3", f"value:{val}")
 
-    if missing_all > 5:
+    if missing_all > 5 and ocr_quality == "good":
         return (
             False,
             f"{missing_all}/{len(all_values)} values not found in source page text — "
             "possible OCR/VLM misread (e.g., digits transposed like 11564 vs 11664)"
+        )
+    elif missing_all > 0:
+        return (
+            True,
+            f"{missing_all}/{len(all_values)} values not found (OCR quality: {ocr_quality}) — treated as advisory"
         )
 
     return True, ""
@@ -806,13 +895,18 @@ def _run_coverage_checks(
     else:
         findings.append(CheckFinding("A1", "PASS", "All required sections present"))
 
-    # A2 — Missing value ratio
-    missing_ratio = _calculate_missing_ratio(data)
+    # A2 — Missing value ratio (report every individual missing value)
+    missing_ratio, missing_descriptions = _calculate_missing_values(data)
     a2_score = max(0.0, 10.0 - (missing_ratio * 50))  # 0% → 10, 20% → 0
+
+    # Report each missing value as an individual finding
+    for desc in missing_descriptions:
+        findings.append(CheckFinding("A2", "ADVISORY", desc))
+
     if missing_ratio > 0.20:
-        findings.append(CheckFinding("A2", "FAIL", f"Missing value ratio {missing_ratio:.1%} exceeds 20%"))
-    elif missing_ratio > 0.10:
-        findings.append(CheckFinding("A2", "ADVISORY", f"Missing value ratio {missing_ratio:.1%}"))
+        findings.append(CheckFinding("A2", "FAIL", f"Missing value ratio {missing_ratio:.1%} exceeds 20% ({len(missing_descriptions)} empty values)"))
+    elif missing_descriptions:
+        findings.append(CheckFinding("A2", "ADVISORY", f"Missing value ratio {missing_ratio:.1%} ({len(missing_descriptions)} empty values)"))
     else:
         findings.append(CheckFinding("A2", "PASS", f"Missing value ratio {missing_ratio:.1%}"))
 
@@ -829,19 +923,27 @@ def _run_coverage_checks(
     # A6 — Hallucinated fields (labels not in OCR)
     if Config.ENABLE_DEEP_CONTENT_CHECKS and page_texts and len("\n".join(page_texts).strip()) >= 50:
         all_text = "\n".join(page_texts).lower()
+        all_text_norm = _normalize_for_matching(all_text)
+        ocr_quality = _ocr_text_quality(page_texts)
         hallucinated_labels = 0
         for section in data.get("sections", []):
             for row in section.get("rows", []):
                 label = row.get("label", "").strip().lower()
-                if label and label != "__empty__" and label not in all_text:
+                if label and label != "__empty__" and _normalize_for_matching(label) not in all_text_norm:
                     hallucinated_labels += 1
                     if ledger:
                         ledger.charge("A6", f"label:{label}")
-        if hallucinated_labels > 2:
+        # When OCR text is poor (stripped spaces) or garbled (pytesseract noise),
+        # downgrade from FAIL to ADVISORY because the VLM may be correct.
+        unreliable_ocr = ocr_quality in ("poor", "garbled")
+        if hallucinated_labels > 2 and not unreliable_ocr:
             findings.append(CheckFinding("A6", "FAIL", f"{hallucinated_labels} labels not found in source text"))
             hard_fail = True
         elif hallucinated_labels > 0:
-            findings.append(CheckFinding("A6", "ADVISORY", f"{hallucinated_labels} label(s) not in source text"))
+            status = "ADVISORY" if unreliable_ocr else "FAIL"
+            findings.append(CheckFinding("A6", status, f"{hallucinated_labels} label(s) not found in source text (OCR quality: {ocr_quality})"))
+            if status == "FAIL":
+                hard_fail = True
         else:
             findings.append(CheckFinding("A6", "PASS", "All labels appear in source text"))
     else:
@@ -958,9 +1060,11 @@ def _run_structure_checks(data: dict, statement_type: StatementType) -> SectionR
         findings.append(CheckFinding("C1-C3", "PASS", "Accounting equations balance"))
 
     # C4 — Section sum reconciliation
-    sum_passed, sum_feedback = _run_section_sum_checks(data, statement_type)
-    if not sum_passed:
-        findings.append(CheckFinding("C4", "FAIL", sum_feedback))
+    sum_discrepancies = _run_section_sum_checks(data, statement_type)
+    if sum_discrepancies:
+        for msg, is_advisory in sum_discrepancies:
+            status = "ADVISORY" if is_advisory else "FAIL"
+            findings.append(CheckFinding("C4", status, msg))
     else:
         findings.append(CheckFinding("C4", "PASS", "Subtotals reconcile with leaf rows"))
 
@@ -1063,7 +1167,8 @@ def _run_structure_checks(data: dict, statement_type: StatementType) -> SectionR
 
     # Score
     hard_fail = any(f.status == "FAIL" for f in findings)
-    score = 10.0 if eq_passed and sum_passed else 3.0
+    any_sum_fail = any(f.status == "FAIL" and f.check_id == "C4" for f in findings)
+    score = 10.0 if eq_passed and not any_sum_fail else 3.0
     if hard_fail:
         score = min(score, 3.0)
     return SectionResult(score=round(score, 1), findings=findings, hard_fail=hard_fail)
@@ -1106,17 +1211,20 @@ def _run_content_checks(
     # D4 — Label fuzzy accuracy
     if Config.ENABLE_DEEP_CONTENT_CHECKS and page_texts and len("\n".join(page_texts).strip()) >= 50:
         all_text = "\n".join(page_texts).lower()
+        all_text_norm = _normalize_for_matching(all_text)
+        ocr_quality = _ocr_text_quality(page_texts)
         missing_labels = 0
         for section in data.get("sections", []):
             for row in section.get("rows", []):
                 label = row.get("label", "").strip().lower()
                 # Allow truncated labels (they won't match exactly)
-                if label and label != "__empty__" and label not in all_text and not label.endswith(".."):
+                if label and label != "__empty__" and not label.endswith("..") and _normalize_for_matching(label) not in all_text_norm:
                     missing_labels += 1
-        if missing_labels > 3:
+        # When OCR text is stripped (no spaces), downgrade from FAIL to ADVISORY
+        if missing_labels > 3 and ocr_quality == "good":
             findings.append(CheckFinding("D4", "FAIL", f"{missing_labels} labels not found in OCR"))
         elif missing_labels > 0:
-            findings.append(CheckFinding("D4", "ADVISORY", f"{missing_labels} label(s) not found in OCR"))
+            findings.append(CheckFinding("D4", "ADVISORY", f"{missing_labels} label(s) not found in OCR (OCR quality: {ocr_quality})"))
         else:
             findings.append(CheckFinding("D4", "PASS", "All labels found in OCR"))
     else:
