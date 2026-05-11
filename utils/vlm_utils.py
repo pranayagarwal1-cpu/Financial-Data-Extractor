@@ -70,6 +70,10 @@ Return ONLY valid JSON (no markdown fences, no explanation, no <think> blocks) w
 Rules:
 - Preserve all line items and their indentation meaning via label text.
 - For subtotal/total rows set is_subtotal to true.
+- Capture `indent_level` for every row. Consider BOTH label text indentation AND amount/value column indentation. Some statements indent amounts (not labels) to show hierarchy.
+  0 = no indentation (top-level header or grand total)
+  1 = indented child / detail row (label or amount shifted right)
+  2 = grandchild / deeply nested row.
 - Use null for missing values.
 - Keep values as strings exactly as shown (e.g. "$1,234" or "1,234").
 - **COLUMN ORDER IS CRITICAL: The `periods` array must reflect the exact left-to-right column order shown in the image. If the headers read "2025" then "2024" from left to right, `periods` must be ["2025", "2024"] and every `values` array must follow that same order. Do NOT swap columns.**
@@ -90,7 +94,8 @@ Return ONLY valid JSON (no markdown fences, no explanation, no reasoning blocks)
         {
           "label": "Line item label",
           "values": ["value for period 1", "value for period 2"],
-          "is_subtotal": false
+          "is_subtotal": false,
+          "indent_level": 0
         }
       ]
     }
@@ -100,6 +105,10 @@ Return ONLY valid JSON (no markdown fences, no explanation, no reasoning blocks)
 Rules:
 - Preserve all line items and their indentation meaning via label text.
 - For subtotal/total rows (like Gross Profit, Operating Income, Net Income) set is_subtotal to true.
+- Capture `indent_level` for every row. Consider BOTH label text indentation AND amount/value column indentation. Some statements indent amounts (not labels) to show hierarchy.
+  0 = no indentation (top-level header or grand total)
+  1 = indented child / detail row (label or amount shifted right)
+  2 = grandchild / deeply nested row.
 - Use null for missing values.
 - Keep values as strings exactly as shown (e.g. "$1,234" or "1,234").
 - **COLUMN ORDER IS CRITICAL: The `periods` array must reflect the exact left-to-right column order shown in the image. If the headers read "2025" then "2024" from left to right, `periods` must be ["2025", "2024"] and every `values` array must follow that same order. Do NOT swap columns.**
@@ -131,6 +140,10 @@ Return ONLY valid JSON (no markdown fences, no explanation, no reasoning blocks)
 Rules:
 - Preserve all line items and their indentation meaning via label text.
 - For subtotal/total rows (like Net Cash from Operating Activities) set is_subtotal to true.
+- Capture `indent_level` for every row. Consider BOTH label text indentation AND amount/value column indentation. Some statements indent amounts (not labels) to show hierarchy.
+  0 = no indentation (top-level header or grand total)
+  1 = indented child / detail row (label or amount shifted right)
+  2 = grandchild / deeply nested row.
 - Use null for missing values.
 - Keep values as strings exactly as shown (e.g. "$1,234" or "(1,234)" for negatives).
 - **COLUMN ORDER IS CRITICAL: The `periods` array must reflect the exact left-to-right column order shown in the image. If the headers read "2025" then "2024" from left to right, `periods` must be ["2025", "2024"] and every `values` array must follow that same order. Do NOT swap columns.**

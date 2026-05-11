@@ -50,18 +50,53 @@ def get_temp_dir(pdf_path: str) -> str:
     return str(temp_dir)
 
 
-def _build_extraction_prompt(statement_type: StatementType, feedback: str = "") -> str:
-    """Build extraction prompt, appending evaluator feedback on retry."""
+def _build_extraction_prompt(
+    statement_type: StatementType,
+    feedback: str = "",
+    retry_context: Optional[dict] = None,
+    ocr_text: str = "",
+    retry_count: int = 0,
+) -> str:
+    """
+    Build extraction prompt, appending evaluator feedback on retry.
+
+    Phase 3 — Targeted prompt mutation:
+    - Attempt 1: VLM only (generic feedback)
+    - Attempt 2: VLM + OCR diff context
+    - Attempt 3: Higher-capability model hint + full OCR context
+    """
     from utils.vlm_utils import EXTRACTION_PROMPTS
     base = EXTRACTION_PROMPTS[statement_type]
-    if not feedback:
+    if not feedback and not retry_context:
         return base
-    return (
-        f"{base}\n\n"
-        f"IMPORTANT — CORRECTIONS FROM PREVIOUS EXTRACTION ATTEMPT:\n"
-        f"{feedback}\n\n"
-        f"Please ensure all issues above are fixed in this extraction."
-    )
+
+    parts = [base]
+    parts.append("IMPORTANT — CORRECTIONS FROM PREVIOUS EXTRACTION ATTEMPT:")
+
+    # Phase 3 — targeted prompt addendum based on failure categories
+    if retry_context and retry_context.get("targeted_prompt_addendum"):
+        parts.append(retry_context["targeted_prompt_addendum"])
+
+    if feedback:
+        parts.append(feedback)
+
+    # Escalation: Attempt 2+ inject OCR text as ground-truth reference
+    if retry_count >= 2 and ocr_text:
+        # Truncate to avoid overwhelming the context window
+        ocr_snippet = ocr_text[:2000].replace("\n", " ")
+        parts.append(
+            f"GROUND-TRUTH OCR TEXT FROM SOURCE (for reference only): {ocr_snippet}"
+        )
+
+    # Escalation: Attempt 3 hint to use best reasoning
+    if retry_count >= 3:
+        parts.append(
+            "This is the final extraction attempt. Use your highest-capability reasoning. "
+            "Verify every total with arithmetic before responding."
+        )
+
+    parts.append("Please ensure all issues above are fixed in this extraction.")
+    return "\n\n".join(parts)
 
 
 def extractor_node(state: dict) -> dict:
@@ -150,8 +185,16 @@ def extractor_node(state: dict) -> dict:
     print(f"📂 Temp directory: {tmp_dir}")
     print("Extracting data with VLM…\n")
 
-    # Load evaluator feedback for retry prompt injection
+    # Load evaluator feedback and retry context for targeted prompt injection
     feedback_map = state.get("last_evaluation_feedback", {})
+    retry_context_map = state.get("retry_context", {})
+
+    # Phase 3 — Escalation ladder: attempt 3 switches to higher-capability model
+    extraction_model = Config.EXTRACTION_MODEL
+    if new_retry_count >= 3 and Config.RETRY_EXTRACTION_MODEL:
+        extraction_model = Config.RETRY_EXTRACTION_MODEL
+        logging.info(f"Retry escalation: using model {extraction_model}")
+        print(f"🔼 Retry escalation: switching to {extraction_model}")
 
     def extract_single_page(statement_type: StatementType, page_num: int) -> Optional[dict]:
         """Extract data from a single page. Returns extracted data or None."""
@@ -167,9 +210,17 @@ def extractor_node(state: dict) -> dict:
 
         try:
             feedback = feedback_map.get(statement_type, "")
-            prompt = _build_extraction_prompt(statement_type, feedback) if feedback else None
+            ctx = retry_context_map.get(statement_type)
+            ocr_text = "\n".join(page_texts.get(statement_type, []))
+            prompt = _build_extraction_prompt(
+                statement_type,
+                feedback=feedback,
+                retry_context=ctx,
+                ocr_text=ocr_text,
+                retry_count=new_retry_count,
+            ) if (feedback or ctx) else None
             page_data = vlm_extract_statement(
-                img_path, statement_type, Config.EXTRACTION_MODEL,
+                img_path, statement_type, extraction_model,
                 run_id=run_id, prompt=prompt
             )
             logging.info(f"  Page {page_num} extracted successfully")

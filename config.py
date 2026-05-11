@@ -38,6 +38,11 @@ class Config:
     MAX_RETRIES = 2      # Maximum re-extraction attempts
     MAX_CAT_RETRIES = 2  # Allows 1 retry after initial attempt
 
+    # Retry policy: score-based with hard-fail check overrides (Phase 3)
+    RETRY_MIN_OVERALL_SCORE = 6.0
+    RETRY_HARD_FAIL_CHECKS = ["B2", "A1", "C1", "C2", "C3"]
+    NEVER_RETRY_CHECKS = ["C7", "A3"]  # structural issues retry won't fix
+
     # Output settings
     OUTPUT_FORMATS = ["json", "excel"]  # Supported output formats
 
@@ -50,6 +55,9 @@ class Config:
 
     # Orientation correction for scanned / inverted PDF pages
     AUTO_CORRECT_ORIENTATION = os.getenv("AUTO_CORRECT_ORIENTATION", "true").lower() == "true"
+
+    # Phase 6 — Deep content checks toggle (disable when latency is critical)
+    ENABLE_DEEP_CONTENT_CHECKS = os.getenv("ENABLE_DEEP_CONTENT_CHECKS", "true").lower() == "true"
 
     # Observability settings
     ENABLE_OBSERVABILITY = os.getenv("ENABLE_OBSERVABILITY", "true").lower() == "true"

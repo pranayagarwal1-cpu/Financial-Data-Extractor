@@ -317,6 +317,23 @@ class Observability:
             run_id=run_id
         )
 
+    def log_check_outcomes(self, statement_type: str, findings: list[dict],
+                           run_id: Optional[str] = None):
+        """
+        Log individual programmatic check outcomes (PASS / FAIL / ADVISORY).
+
+        Args:
+            statement_type: Type of statement evaluated
+            findings: List of finding dicts with check_id, status, message
+            run_id: Optional run ID to associate with
+        """
+        self.log_event(
+            "check_outcomes",
+            statement_type=statement_type,
+            findings=findings,
+            run_id=run_id,
+        )
+
     def log_event(self, event_type: str, **kwargs):
         """
         Log a structured event to the JSON Lines log file.

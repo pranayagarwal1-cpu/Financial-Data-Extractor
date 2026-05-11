@@ -171,6 +171,9 @@ def should_retry(state: dict) -> str:
     """
     Conditional edge function to determine next step after evaluator.
 
+    Phase 3 — Score-based retry with hard-fail check overrides and
+    never-retry exclusions (structural issues retry cannot fix).
+
     Returns:
         'extractor' to retry extraction,
         'categorizer' to proceed to categorization (if enabled),
@@ -178,6 +181,7 @@ def should_retry(state: dict) -> str:
         'end' to terminate without saving (degraded quality or total failure)
     """
     evaluation = state.get("evaluation_result", {})
+    retry_context = state.get("retry_context", {})
     retry_count = state.get("retry_count", 0)
     enable_categorization = state.get("enable_categorization", True)
     extracted_data = state.get("extracted_data", {})
@@ -209,8 +213,27 @@ def should_retry(state: dict) -> str:
         print("❌ No extracted data available — output will NOT be saved")
         return "end"
 
-    if retry_count < Config.MAX_RETRIES:
-        logging.warning(f"Extraction quality insufficient, retrying ({retry_count + 1}/{Config.MAX_RETRIES})")
+    # Phase 3 — Smart retry decision using retry_context
+    statements_needing_retry = 0
+    statements_blocked_by_never_retry = 0
+
+    for st, ctx in retry_context.items():
+        if not ctx.get("should_retry", True):
+            statements_blocked_by_never_retry += 1
+            logging.info(f"{st.value}: blocked from retry — only structural failures (won't fix)")
+            continue
+        statements_needing_retry += 1
+
+    # If every failed statement is blocked by never-retry checks, don't waste a retry
+    if statements_needing_retry == 0 and statements_blocked_by_never_retry > 0:
+        logging.warning("All failures are structural (never-retry). Skipping retry.")
+        print("⚠️  Failures are structural — retry would not help.")
+        # Fall through to max-retry / end logic below
+
+    if retry_count < Config.MAX_RETRIES and statements_needing_retry > 0:
+        logging.warning(
+            f"Extraction quality insufficient, retrying ({retry_count + 1}/{Config.MAX_RETRIES})"
+        )
         print(f"⚠️  Extraction quality insufficient. Retrying ({retry_count + 1}/{Config.MAX_RETRIES})…")
         return "extractor"
 
@@ -299,6 +322,9 @@ def save_outputs(state: dict) -> dict:
 
     output_files = []
 
+    evaluation_results = state.get("evaluation_result", {})
+    retry_count = state.get("retry_count", 0)
+
     for statement_type, data in data_to_save.items():
         statement_name = statement_type.value
 
@@ -320,9 +346,26 @@ def save_outputs(state: dict) -> dict:
         print(f"💾 {statement_name.replace('_', ' ').title()} JSON: {json_path}")
         output_files.append(json_path)
 
+        # Phase 4 — Build Quality Report metadata per statement
+        eval_result = evaluation_results.get(statement_type, {})
+        report_metadata = None
+        if eval_result and eval_result.get("scores"):
+            report_metadata = {
+                "pdf_name": pdf_name,
+                "statement_type": statement_name,
+                "run_id": run_id,
+                "timestamp": timestamp,
+                "overall_passed": eval_result.get("passed", False),
+                "scores": eval_result.get("scores", {}),
+                "findings": eval_result.get("findings", []),
+                "guardrail_flags": guardrail_flags,
+                "feedback": eval_result.get("feedback", ""),
+                "retry_count": retry_count,
+            }
+
         # Save Excel
         excel_path = str(OUTPUT_DIR / f"{pdf_name}_{statement_name}_{timestamp}.xlsx")
-        save_to_excel(data, excel_path)
+        save_to_excel(data, excel_path, report_metadata=report_metadata)
         logging.info(f"Excel saved: {excel_path}")
         print(f"💾 {statement_name.replace('_', ' ').title()} Excel: {excel_path}")
         output_files.append(excel_path)

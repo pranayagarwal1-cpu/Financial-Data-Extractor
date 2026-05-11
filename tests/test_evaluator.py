@@ -5,11 +5,15 @@ from decimal import Decimal
 import pytest
 
 from agents.evaluator import (
+    _build_retry_context,
     _calculate_missing_ratio,
     _has_required_sections,
     _parse_amount,
     _run_equation_checks,
     _run_numeric_precheck,
+    CheckFinding,
+    PenaltyLedger,
+    SectionResult,
 )
 from utils.vlm_utils import StatementType
 
@@ -124,15 +128,16 @@ class TestEquationChecks:
         assert passed
 
     def test_balance_sheet_imbalance_fails(self):
+        # Use large values so the $1K materiality gate does not auto-pass
         data = {"sections": [
             {"name": "Assets", "rows": [
-                {"label": "Total Assets", "values": ["1000"], "is_subtotal": True},
+                {"label": "Total Assets", "values": ["10000"], "is_subtotal": True},
             ]},
             {"name": "Liabilities", "rows": [
-                {"label": "Total Liabilities", "values": ["400"], "is_subtotal": True},
+                {"label": "Total Liabilities", "values": ["4000"], "is_subtotal": True},
             ]},
             {"name": "Equity", "rows": [
-                {"label": "Total Equity", "values": ["500"], "is_subtotal": True},  # off by 100
+                {"label": "Total Equity", "values": ["5000"], "is_subtotal": True},  # off by 1000
             ]},
         ]}
         passed, feedback = _run_equation_checks(data, StatementType.BALANCE_SHEET)
@@ -169,13 +174,14 @@ class TestEquationChecks:
         assert passed
 
     def test_income_statement_gross_profit_mismatch_fails(self):
+        # Use large values so the $1K materiality gate does not auto-pass
         data = {"sections": [
             {"name": "Revenue", "rows": [
-                {"label": "Total Revenue", "values": ["1000"], "is_subtotal": True},
+                {"label": "Total Revenue", "values": ["10000"], "is_subtotal": True},
             ]},
             {"name": "COGS", "rows": [
-                {"label": "Cost of Goods Sold", "values": ["400"], "is_subtotal": True},
-                {"label": "Gross Profit", "values": ["500"], "is_subtotal": True},  # should be 600
+                {"label": "Cost of Goods Sold", "values": ["4000"], "is_subtotal": True},
+                {"label": "Gross Profit", "values": ["5000"], "is_subtotal": True},  # should be 6000
             ]},
         ]}
         passed, feedback = _run_equation_checks(data, StatementType.INCOME_STATEMENT)
@@ -192,3 +198,63 @@ class TestEquationChecks:
         ]}
         passed, _ = _run_equation_checks(data, StatementType.CASH_FLOW)
         assert passed
+
+
+class TestPenaltyLedger:
+    def test_first_charge_applies(self):
+        ledger = PenaltyLedger()
+        assert ledger.charge("A6", "row_1") is True
+        assert ledger.charge("A6", "row_1") is False
+
+    def test_different_keys_independent(self):
+        ledger = PenaltyLedger()
+        assert ledger.charge("A6", "row_1") is True
+        assert ledger.charge("A6", "row_2") is True
+        assert ledger.charge("D3", "row_1") is True
+
+
+class TestRetryContext:
+    def test_passed_does_not_retry(self):
+        coverage = SectionResult(8.0, [CheckFinding("A1", "PASS", "ok")])
+        fmt = SectionResult(9.0, [CheckFinding("B1", "PASS", "ok")])
+        struct = SectionResult(9.0, [CheckFinding("C1", "PASS", "ok")])
+        content = SectionResult(8.0, [CheckFinding("D1", "PASS", "ok")])
+        ctx = _build_retry_context(coverage, fmt, struct, content, 8.5, passed=True)
+        assert ctx["should_retry"] is False
+
+    def test_hard_fail_triggers_retry(self):
+        coverage = SectionResult(8.0, [CheckFinding("A1", "FAIL", "missing")])
+        fmt = SectionResult(9.0, [CheckFinding("B1", "PASS", "ok")])
+        struct = SectionResult(9.0, [CheckFinding("C1", "PASS", "ok")])
+        content = SectionResult(8.0, [CheckFinding("D1", "PASS", "ok")])
+        ctx = _build_retry_context(coverage, fmt, struct, content, 5.0, passed=False)
+        assert ctx["should_retry"] is True
+        assert "A1" in ctx["hard_fail_checks"]
+
+    def test_never_retry_checks_block_retry(self):
+        coverage = SectionResult(8.0, [CheckFinding("A3", "FAIL", "page coverage")])
+        fmt = SectionResult(9.0, [CheckFinding("B1", "PASS", "ok")])
+        struct = SectionResult(9.0, [CheckFinding("C7", "ADVISORY", "orientation")])
+        content = SectionResult(8.0, [CheckFinding("D1", "PASS", "ok")])
+        ctx = _build_retry_context(coverage, fmt, struct, content, 7.0, passed=False)
+        assert ctx["only_never_retry_fails"] is True
+        # A3 is a never-retry check, so retry should be blocked even though score > 6
+        assert ctx["should_retry"] is False
+
+    def test_missed_rows_prompt_addendum(self):
+        coverage = SectionResult(5.0, [CheckFinding("A5", "FAIL", "missed")])
+        fmt = SectionResult(9.0, [CheckFinding("B1", "PASS", "ok")])
+        struct = SectionResult(9.0, [CheckFinding("C1", "PASS", "ok")])
+        content = SectionResult(8.0, [CheckFinding("D1", "PASS", "ok")])
+        ctx = _build_retry_context(coverage, fmt, struct, content, 5.0, passed=False)
+        assert "missed_or_hallucinated_rows" in ctx["categories"]
+        assert "Re-examine" in ctx["targeted_prompt_addendum"]
+
+    def test_equation_failure_prompt_addendum(self):
+        coverage = SectionResult(8.0, [CheckFinding("A1", "PASS", "ok")])
+        fmt = SectionResult(9.0, [CheckFinding("B1", "PASS", "ok")])
+        struct = SectionResult(5.0, [CheckFinding("C1", "FAIL", "does not balance")])
+        content = SectionResult(8.0, [CheckFinding("D1", "PASS", "ok")])
+        ctx = _build_retry_context(coverage, fmt, struct, content, 5.0, passed=False)
+        assert "equation_failure" in ctx["categories"]
+        assert "accounting equation" in ctx["targeted_prompt_addendum"]
