@@ -14,7 +14,9 @@ Responsibilities:
 
 import json
 import logging
+import re
 import time
+import unicodedata
 from typing import Optional, Dict
 from enum import Enum
 
@@ -727,10 +729,16 @@ def _normalize_for_matching(text: str) -> str:
     """
     Normalize text for fuzzy ground-truth matching.
 
-    Removes all whitespace, dashes, underscores, and newlines, then lowercases.
-    This handles PDFs where the text layer has stripped spaces
+    Collapses doubled consecutive characters in ALL-CAPS tokens (e.g.
+    GGRROOSSSS → GROSS), a common PDF text-layer artifact, then removes
+    whitespace, dashes, underscores, newlines, and lowercases.
+    This also handles PDFs where the text layer has stripped spaces
     (e.g. 'TotalTradingIncome' vs 'Total Trading Income').
     """
+    def _collapse_caps(m):
+        token = m.group(0)
+        return re.sub(r'(.)(\1+)', r'\1', token)
+    text = re.sub(r'[A-Z]{2,}', _collapse_caps, text)
     return text.lower().replace(" ", "").replace("-", "").replace("_", "").replace("\n", "").replace("\t", "").replace("&", "")
 
 
@@ -748,10 +756,11 @@ def _ocr_text_quality(page_texts: list[str]) -> str:
     Assess OCR text quality to decide how strict hallucination checks should be.
 
     Returns:
-        'good'     — OCR text has normal spacing and punctuation
-        'poor'     — OCR text has stripped spaces (e.g. 'TotalTradingIncome')
-        'garbled'  — OCR text from pytesseract is severely corrupted
-                     (high ratio of non-word artifacts, random symbols)
+        'good'       — OCR text has normal spacing and punctuation
+        'acceptable' — Minor OCR artifacts (3–8% garbled words); subtotals
+                       still verified strictly, individual values downgraded
+        'poor'       — OCR text has stripped spaces (e.g. 'TotalTradingIncome')
+        'garbled'    — OCR text from pytesseract is severely corrupted (>8% garbage words)
     """
     all_text = "\n".join(page_texts)
     if not all_text:
@@ -769,17 +778,42 @@ def _ocr_text_quality(page_texts: list[str]) -> str:
     if not words:
         return "good"
 
-    ALLOWED = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789()-.,$%&/ ")
+    # Characters always acceptable in financial documents
+    _ALLOWED_EXPLICIT = set(
+        "abcdefghijklmnopqrstuvwxyz"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "0123456789"
+        "()-.,$%&/:;'\"*+#!?@_="
+        "—–…€£¥°±"
+    )
+
     garbled_words = 0
+    meaningful_words = 0
     for word in words:
-        if not word:
-            continue
-        good_chars = sum(1 for c in word if c in ALLOWED)
+        if len(word) <= 1:
+            continue  # skip standalone punctuation tokens (em dashes, colons, etc.)
+        meaningful_words += 1
+        good_chars = 0
+        for c in word:
+            if c in _ALLOWED_EXPLICIT:
+                good_chars += 1
+            elif unicodedata.category(c)[0] in ('L', 'N'):
+                # Any Unicode letter or digit (covers accented chars, CJK, etc.)
+                good_chars += 1
+            elif unicodedata.category(c)[0] == 'P':
+                # Any Unicode punctuation
+                good_chars += 1
         if good_chars / len(word) < 0.6:
             garbled_words += 1
 
-    if garbled_words / len(words) > 0.03:
+    if meaningful_words == 0:
+        return "good"
+
+    garbled_ratio = garbled_words / meaningful_words
+    if garbled_ratio > 0.08:
         return "garbled"
+    if garbled_ratio > 0.03:
+        return "acceptable"
 
     return "good"
 
@@ -834,8 +868,10 @@ def _run_hallucination_check(
                 # Content section D2/D3 owns the penalty for missing values
                 ledger.charge("D3", f"value:{val}")
 
-    # When OCR quality is poor (stripped text layer), downgrade to advisory
-    if missing_subtotals > 3 and ocr_quality == "good":
+    # Subtotals: strict for good/acceptable OCR (large distinctive values),
+    # advisory for poor/garbled OCR (ground truth unreliable).
+    strict_subtotals = ocr_quality in ("good", "acceptable")
+    if missing_subtotals > 3 and strict_subtotals:
         return (
             False,
             f"{missing_subtotals}/{len(subtotal_values)} subtotal values not found in source page text"
@@ -854,6 +890,8 @@ def _run_hallucination_check(
             if ledger:
                 ledger.charge("D3", f"value:{val}")
 
+    # Individual values: strict only for good OCR; minor OCR noise makes
+    # individual value matching unreliable so downgrade to advisory.
     if missing_all > 5 and ocr_quality == "good":
         return (
             False,
@@ -921,29 +959,31 @@ def _run_coverage_checks(
         findings.append(CheckFinding("A4", "PASS", f"{total_rows} rows extracted"))
 
     # A6 — Hallucinated fields (labels not in OCR)
+    # NOTE: A6 is advisory-only. True hallucinations are caught by C4 (sum
+    # reconciliation), C12 (duplicates), and A1 (required sections).
+    # Downgrading prevents false positives when the VLM legitimately cleans
+    # garbled OCR (e.g. "GGRROOSSSS MMAARRGGIINN" → "Gross Margin").
     if Config.ENABLE_DEEP_CONTENT_CHECKS and page_texts and len("\n".join(page_texts).strip()) >= 50:
-        all_text = "\n".join(page_texts).lower()
+        all_text = "\n".join(page_texts)
         all_text_norm = _normalize_for_matching(all_text)
         ocr_quality = _ocr_text_quality(page_texts)
         hallucinated_labels = 0
         for section in data.get("sections", []):
             for row in section.get("rows", []):
-                label = row.get("label", "").strip().lower()
+                label = row.get("label", "").strip()
                 if label and label != "__empty__" and _normalize_for_matching(label) not in all_text_norm:
                     hallucinated_labels += 1
                     if ledger:
                         ledger.charge("A6", f"label:{label}")
-        # When OCR text is poor (stripped spaces) or garbled (pytesseract noise),
-        # downgrade from FAIL to ADVISORY because the VLM may be correct.
-        unreliable_ocr = ocr_quality in ("poor", "garbled")
-        if hallucinated_labels > 2 and not unreliable_ocr:
+
+        # A6 never hard-fails. Thresholds:
+        #   good OCR        → FAIL (not hard_fail) if >5 labels missing
+        #   acceptable/poor/garbled → ADVISORY only
+        good_ocr = ocr_quality == "good"
+        if hallucinated_labels > 5 and good_ocr:
             findings.append(CheckFinding("A6", "FAIL", f"{hallucinated_labels} labels not found in source text"))
-            hard_fail = True
         elif hallucinated_labels > 0:
-            status = "ADVISORY" if unreliable_ocr else "FAIL"
-            findings.append(CheckFinding("A6", status, f"{hallucinated_labels} label(s) not found in source text (OCR quality: {ocr_quality})"))
-            if status == "FAIL":
-                hard_fail = True
+            findings.append(CheckFinding("A6", "ADVISORY", f"{hallucinated_labels} label(s) not found in source text (OCR quality: {ocr_quality})"))
         else:
             findings.append(CheckFinding("A6", "PASS", "All labels appear in source text"))
     else:
@@ -1210,13 +1250,13 @@ def _run_content_checks(
 
     # D4 — Label fuzzy accuracy
     if Config.ENABLE_DEEP_CONTENT_CHECKS and page_texts and len("\n".join(page_texts).strip()) >= 50:
-        all_text = "\n".join(page_texts).lower()
+        all_text = "\n".join(page_texts)
         all_text_norm = _normalize_for_matching(all_text)
         ocr_quality = _ocr_text_quality(page_texts)
         missing_labels = 0
         for section in data.get("sections", []):
             for row in section.get("rows", []):
-                label = row.get("label", "").strip().lower()
+                label = row.get("label", "").strip()
                 # Allow truncated labels (they won't match exactly)
                 if label and label != "__empty__" and not label.endswith("..") and _normalize_for_matching(label) not in all_text_norm:
                     missing_labels += 1

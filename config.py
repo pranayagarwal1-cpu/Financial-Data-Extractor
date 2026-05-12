@@ -44,7 +44,7 @@ class Config:
     NEVER_RETRY_CHECKS = ["C7", "A3"]  # structural issues retry won't fix
 
     # When True, saves output even if evaluation fails (useful for manual review)
-    FORCE_SAVE_ON_FAILURE = os.getenv("FORCE_SAVE_ON_FAILURE", "false").lower() == "true"
+    FORCE_SAVE_ON_FAILURE = os.getenv("FORCE_SAVE_ON_FAILURE", "true").lower() == "true"
 
     # Output settings
     OUTPUT_FORMATS = ["json", "excel"]  # Supported output formats

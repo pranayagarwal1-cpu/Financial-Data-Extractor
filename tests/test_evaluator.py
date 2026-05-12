@@ -6,10 +6,12 @@ import pytest
 
 from agents.evaluator import (
     _build_retry_context,
-    _calculate_missing_ratio,
+    _calculate_missing_values,
     _has_required_sections,
+    _ocr_text_quality,
     _parse_amount,
     _run_equation_checks,
+    _run_hallucination_check,
     _run_numeric_precheck,
     CheckFinding,
     PenaltyLedger,
@@ -73,17 +75,19 @@ class TestNumericPrecheck:
         assert score == 10.0
 
 
-class TestMissingRatio:
+class TestMissingValues:
     def test_counts_blank_null_and_none(self):
         data = {"sections": [{
             "name": "X", "rows": [
                 {"label": "a", "values": ["1", "", None, "null"]},
             ]
         }]}
-        assert _calculate_missing_ratio(data) == pytest.approx(0.75)
+        ratio, _ = _calculate_missing_values(data)
+        assert ratio == pytest.approx(0.75)
 
     def test_empty_data_returns_full_missing(self):
-        assert _calculate_missing_ratio({"sections": []}) == 1.0
+        ratio, _ = _calculate_missing_values({"sections": []})
+        assert ratio == 1.0
 
 
 class TestRequiredSections:
@@ -258,3 +262,196 @@ class TestRetryContext:
         ctx = _build_retry_context(coverage, fmt, struct, content, 5.0, passed=False)
         assert "equation_failure" in ctx["categories"]
         assert "accounting equation" in ctx["targeted_prompt_addendum"]
+
+
+class TestOcrTextQuality:
+    def test_clean_text_is_good(self):
+        text = [
+            "Revenue  1,234,567   987,654\n"
+            "Cost of Goods Sold  456,789   345,678\n"
+            "Gross Profit  777,778   641,976"
+        ]
+        assert _ocr_text_quality(text) == "good"
+
+    def test_stripped_spaces_is_poor(self):
+        # No spaces between words — stripped text layer
+        text = ["TotalTradingIncome1234567CostOfGoodsSold456789"]
+        assert _ocr_text_quality(text) == "poor"
+
+    def test_em_dashes_not_counted_as_garbled(self):
+        # Em dashes are common in financial docs and should NOT trigger garbled
+        text = [
+            "Net Income — Continuing Operations  100,000\n"
+            "Revenue — Domestic  50,000\n"
+            "Expenses — Operating  30,000"
+        ]
+        assert _ocr_text_quality(text) == "good"
+
+    def test_colons_not_counted_as_garbled(self):
+        text = [
+            "Section: Revenue\n"
+            "Note: Includes subsidiary results\n"
+            "Total: 1,234,567"
+        ]
+        assert _ocr_text_quality(text) == "good"
+
+    def test_accented_company_names_are_good(self):
+        # Accented characters should be recognized as letters via Unicode categories
+        text = [
+            "Müller & Co. Revenue  100,000\n"
+            "José's Consulting  50,000"
+        ]
+        assert _ocr_text_quality(text) == "good"
+
+    def test_minor_garbage_is_acceptable(self):
+        # ~4% garbled words — between 3% and 8% → "acceptable"
+        # 25 words, 1 garbled = 4%
+        text = [
+            "Revenue 100,000 90,000\n"
+            "Cost of Goods Sold 45,000 40,000\n"
+            "Gross Profit 55,000 50,000\n"
+            "Operating Expenses 20,000 18,000\n"
+            "Net Income 35,000 32,000\n"
+            "┌─── box drawing garbage ───┐"
+        ]
+        assert _ocr_text_quality(text) == "acceptable"
+
+    def test_severe_garbage_is_garbled(self):
+        # >8% garbled words → "garbled"
+        text = [
+            "Revenue ┌─┐ └─┘ ╠══ 100,000\n"
+            "├──┤ Cost of Goods ├─ 45,000\n"
+            "└──┘ Gross Profit ── 55,000\n"
+            "╬══ Operating ╬══ 20,000\n"
+            "Net Income ╠══ 35,000\n"
+        ]
+        assert _ocr_text_quality(text) == "garbled"
+
+    def test_empty_text_is_good(self):
+        assert _ocr_text_quality([""]) == "good"
+        assert _ocr_text_quality([]) == "good"
+
+    def test_currency_symbols_accepted(self):
+        text = ["Revenue €100,000  £90,000  ¥1,234,567"]
+        assert _ocr_text_quality(text) == "good"
+
+    def test_standalone_punctuation_skipped(self):
+        # Single-char tokens (colons, dashes) are skipped, not counted as garbled
+        text = ["Revenue : 100,000 — 90,000"]
+        assert _ocr_text_quality(text) == "good"
+
+
+class TestHallucinationCheckOcrTiers:
+    """Test that hallucination check strictness varies by OCR quality tier."""
+
+    def test_good_ocr_missing_subtotals_fails(self):
+        """With good OCR, >3 missing subtotals should FAIL."""
+        # Page text must be >= 50 chars to trigger the check
+        page_text = ["Revenue from operations 100,000  Cost of Goods Sold 45,000  Gross Profit 55,000"]
+        # 5 subtotals, all absent from page text
+        data = {
+            "sections": [{
+                "name": "Test",
+                "rows": [
+                    {"label": "Total A", "values": ["999111"], "is_subtotal": True},
+                    {"label": "Total B", "values": ["999222"], "is_subtotal": True},
+                    {"label": "Total C", "values": ["999333"], "is_subtotal": True},
+                    {"label": "Total D", "values": ["999444"], "is_subtotal": True},
+                    {"label": "Total E", "values": ["999555"], "is_subtotal": True},
+                ]
+            }]
+        }
+        passed, feedback = _run_hallucination_check(data, page_text)
+        assert not passed
+        assert "subtotal" in feedback.lower()
+
+    def test_acceptable_ocr_missing_subtotals_still_fails(self):
+        """With acceptable OCR, >3 missing subtotals should still FAIL (strict)."""
+        page_text = [
+            "Revenue from operations 100,000  Cost of Goods Sold 45,000  "
+            "┌──┐ box drawing noise  Gross Profit 55,000"
+        ]
+        data = {
+            "sections": [{
+                "name": "Test",
+                "rows": [
+                    {"label": "Total A", "values": ["999111"], "is_subtotal": True},
+                    {"label": "Total B", "values": ["999222"], "is_subtotal": True},
+                    {"label": "Total C", "values": ["999333"], "is_subtotal": True},
+                    {"label": "Total D", "values": ["999444"], "is_subtotal": True},
+                    {"label": "Total E", "values": ["999555"], "is_subtotal": True},
+                ]
+            }]
+        }
+        passed, feedback = _run_hallucination_check(data, page_text)
+        assert not passed
+        assert "subtotal" in feedback.lower()
+
+    def test_poor_ocr_missing_subtotals_is_advisory(self):
+        """With poor OCR, missing subtotals should be advisory only."""
+        # Stripped spaces triggers "poor" — must be >= 50 chars after join
+        page_text = ["TotalTradingIncomeFromOperations100000CostOfGoodsSold45000GrossProfit55000"]
+        data = {
+            "sections": [{
+                "name": "Test",
+                "rows": [
+                    {"label": "Total A", "values": ["999111"], "is_subtotal": True},
+                    {"label": "Total B", "values": ["999222"], "is_subtotal": True},
+                    {"label": "Total C", "values": ["999333"], "is_subtotal": True},
+                    {"label": "Total D", "values": ["999444"], "is_subtotal": True},
+                    {"label": "Total E", "values": ["999555"], "is_subtotal": True},
+                ]
+            }]
+        }
+        passed, feedback = _run_hallucination_check(data, page_text)
+        assert passed  # advisory, not hard fail
+        assert "advisory" in feedback.lower()
+
+    def test_good_ocr_missing_individual_values_fails(self):
+        """With good OCR, >5 missing individual values should FAIL."""
+        # Subtotals present in text so Tier 1 passes, then Tier 2 catches missing values
+        page_text = [
+            "Total Assets from all sources 100,000  Total Liabilities and payables 45,000"
+        ]
+        data = {
+            "sections": [{
+                "name": "Assets",
+                "rows": [
+                    {"label": "Cash", "values": ["111111"], "is_subtotal": False},
+                    {"label": "Receivables", "values": ["222222"], "is_subtotal": False},
+                    {"label": "Inventory", "values": ["333333"], "is_subtotal": False},
+                    {"label": "Prepaid", "values": ["444444"], "is_subtotal": False},
+                    {"label": "Other", "values": ["555555"], "is_subtotal": False},
+                    {"label": "Misc", "values": ["666666"], "is_subtotal": False},
+                    {"label": "Total Assets", "values": ["100,000"], "is_subtotal": True},
+                ]
+            }]
+        }
+        passed, feedback = _run_hallucination_check(data, page_text)
+        assert not passed
+
+    def test_acceptable_ocr_missing_individual_values_is_advisory(self):
+        """With acceptable OCR, missing individual values downgrade to advisory."""
+        # Subtotals present in text; enough garbage to be "acceptable" but not "garbled"
+        page_text = [
+            "Total Assets from all sources 100,000  Total Liabilities and payables 45,000  "
+            "┌──┐ noise markers present in scan  Total Equity 55,000"
+        ]
+        data = {
+            "sections": [{
+                "name": "Assets",
+                "rows": [
+                    {"label": "Cash", "values": ["111111"], "is_subtotal": False},
+                    {"label": "Receivables", "values": ["222222"], "is_subtotal": False},
+                    {"label": "Inventory", "values": ["333333"], "is_subtotal": False},
+                    {"label": "Prepaid", "values": ["444444"], "is_subtotal": False},
+                    {"label": "Other", "values": ["555555"], "is_subtotal": False},
+                    {"label": "Misc", "values": ["666666"], "is_subtotal": False},
+                    {"label": "Total Assets", "values": ["100,000"], "is_subtotal": True},
+                ]
+            }]
+        }
+        passed, feedback = _run_hallucination_check(data, page_text)
+        # Individual values are downgraded for acceptable OCR
+        assert passed  # advisory, not fail
+        assert "advisory" in feedback.lower()
