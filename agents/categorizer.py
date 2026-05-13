@@ -529,10 +529,9 @@ def apply_categorization_to_statement(
             "rows": categorized_rows,
         })
 
-    return {
-        **data,
-        "sections": categorized_sections,
-    }
+    base = data.model_dump() if hasattr(data, "model_dump") else dict(data)
+    base["sections"] = categorized_sections
+    return base
 
 
 def _merge_selective_categorization(
@@ -597,10 +596,9 @@ def _merge_selective_categorization(
             "rows": merged_rows,
         })
 
-    return {
-        **prev_categorized_data,
-        "sections": merged_sections,
-    }
+    base = prev_categorized_data.model_dump() if hasattr(prev_categorized_data, "model_dump") else dict(prev_categorized_data)
+    base["sections"] = merged_sections
+    return base
 
 
 def categorizer_node(state: dict) -> dict:

@@ -1,46 +1,50 @@
-from typing import TypedDict, Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field
 from utils.vlm_utils import StatementType
 from models.schemas import StatementData
 
 
-class AgentState(TypedDict, total=False):
+class AgentState(BaseModel):
     """
     State for the multi-statement financial extraction workflow.
 
-    Attributes:
-        input_pdf: Path to the input PDF file
-        statement_types: List of statement types to extract
-        statement_pages: Dict mapping StatementType to list of page numbers
-        extracted_data: Dict mapping StatementType to extracted data (StatementData as dict)
-        evaluation_result: Dict mapping StatementType to evaluation results
-        categorized_data: Dict mapping StatementType to categorized data (with CoA mappings)
-        categorization_summary: Summary statistics for categorization
-        review_queue: List of line items needing human review
-        retry_count: Number of extraction attempts
-        cat_retry_count: Number of categorization attempts
-        cat_evaluation_result: Categorization evaluation scores per statement type
-        output_files: List of output file paths
-        error_message: Error message if any step fails
-        log_file: Path to the log file for this run
-        run_id: Unique identifier for this extraction run (for observability)
-        enable_categorization: Whether to run CoA categorization after extraction
+    Uses Pydantic BaseModel instead of TypedDict so LangGraph's
+    ``get_type_hints`` introspection does not depend on the
+    ``graph.state`` module remaining in ``sys.modules`` —
+    a requirement that Streamlit's script re-loader breaks
+    between re-runs.
     """
-    input_pdf: str
-    statement_types: List[StatementType]
-    statement_pages: Dict[StatementType, List[int]]
-    extracted_data: Dict[StatementType, StatementData]
-    evaluation_result: Dict[StatementType, dict]
-    categorized_data: Dict[StatementType, StatementData]
-    categorization_summary: Dict[str, Any]
-    review_queue: List[Dict[str, Any]]
-    retry_count: int
-    cat_retry_count: int
-    cat_evaluation_result: Dict[str, Any]
-    output_files: List[str]
-    error_message: Optional[str]
-    log_file: Optional[str]
-    run_id: Optional[str]
-    enable_categorization: bool
-    last_evaluation_feedback: Dict[StatementType, str]
-    guardrail_flags: List[str]
-    page_texts: Dict[StatementType, List[str]]
+
+    input_pdf: str = ""
+    statement_types: List[StatementType] = Field(default_factory=list)
+    statement_pages: Dict[StatementType, List[int]] = Field(default_factory=dict)
+    extracted_data: Dict[StatementType, StatementData] = Field(default_factory=dict)
+    evaluation_result: Dict[StatementType, dict] = Field(default_factory=dict)
+    categorized_data: Dict[StatementType, StatementData] = Field(default_factory=dict)
+    categorization_summary: Dict[str, Any] = Field(default_factory=dict)
+    review_queue: List[Dict[str, Any]] = Field(default_factory=list)
+    retry_count: int = 0
+    cat_retry_count: int = 0
+    cat_evaluation_result: Dict[str, Any] = Field(default_factory=dict)
+    output_files: List[str] = Field(default_factory=list)
+    error_message: Optional[str] = None
+    log_file: Optional[str] = None
+    run_id: Optional[str] = None
+    enable_categorization: bool = True
+    last_evaluation_feedback: Dict[StatementType, str] = Field(default_factory=dict)
+    guardrail_flags: List[str] = Field(default_factory=list)
+    page_texts: Dict[StatementType, List[str]] = Field(default_factory=dict)
+
+    # ------------------------------------------------------------------
+    # Dict-like interface so existing nodes (typed as ``state: dict``)
+    # can keep using ``.get()`` and ``[key]`` without changes.
+    # ------------------------------------------------------------------
+
+    def __getitem__(self, key: str):
+        return getattr(self, key)
+
+    def get(self, key: str, default=None):
+        return getattr(self, key, default)
+
+    def __contains__(self, key: str) -> bool:
+        return hasattr(self, key)

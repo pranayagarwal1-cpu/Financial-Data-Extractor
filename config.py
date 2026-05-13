@@ -38,6 +38,10 @@ class Config:
     MAX_RETRIES = 2      # Maximum re-extraction attempts
     MAX_CAT_RETRIES = 2  # Allows 1 retry after initial attempt
 
+    # Parallel extraction worker caps
+    MAX_PARALLEL_PAGES_LOCAL = 3   # Conservative for local Ollama (VRAM-bound)
+    MAX_PARALLEL_PAGES_CLOUD = 10  # Higher for cloud API backends
+
     # Retry policy: score-based with hard-fail check overrides (Phase 3)
     RETRY_MIN_OVERALL_SCORE = 6.0
     RETRY_HARD_FAIL_CHECKS = ["B2", "A1", "C1", "C2", "C3"]

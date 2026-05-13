@@ -196,7 +196,29 @@ def _parse_amount(val) -> Optional[Decimal]:
     """Parse a raw string value into a Decimal amount."""
     if val is None or val == "" or val == "null":
         return None
-    s = str(val).replace("$", "").replace(",", "").replace(" ", "").strip()
+    s = str(val).replace("$", "").strip()
+    # Heuristic: OCR often replaces a decimal point with a space.
+    # "186,714 55" and "758 758 28" should become "186714.55" and "758758.28".
+    # Only apply when the last segment after a space is exactly 2 digits
+    # and the overall number has enough digits to be a currency amount.
+    if " " in s:
+        parts = s.split()
+        if len(parts) >= 2 and len(parts[-1]) == 2 and parts[-1].isdigit():
+            digit_count = sum(c.isdigit() for c in s)
+            if digit_count >= 6:
+                # Reconstruct: join everything before the last part,
+                # strip commas/spaces, then append a decimal point + cents
+                prefix = "".join(parts[:-1]).replace(",", "").replace(" ", "")
+                s = f"{prefix}.{parts[-1]}"
+                # Parentheses check on the reconstructed string
+                if s.startswith("(") and s.endswith(")"):
+                    s = "-" + s[1:-1]
+                try:
+                    return Decimal(s)
+                except Exception:
+                    return None
+    # Normal path: strip commas and spaces
+    s = s.replace(",", "").replace(" ", "")
     # Parentheses denote negative values: (1,234) -> -1234
     if s.startswith("(") and s.endswith(")"):
         s = "-" + s[1:-1]
@@ -467,73 +489,55 @@ def _run_section_sum_checks(data: dict, statement_type: StatementType) -> list[t
             row.get("indent_level", 0) > 0 for row in rows
         )
 
-        subtotals_in_section = []
-        seen_subtotals_stack: list[list[Decimal]] = []
         has_negative_line_item = False
+        for row in rows:
+            for v in row.get("values", []):
+                parsed = _parse_amount(v)
+                if parsed is not None and parsed < 0:
+                    has_negative_line_item = True
+                    break
+            if has_negative_line_item:
+                break
 
-        if has_indent_data:
-            running_leaf_sums = [Decimal("0") for _ in range(num_periods)]
+        # -----------------------------------------------------------------
+        # Accumulate rows between subtotals, then assign each subtotal the
+        # sum of rows with indent GREATER than the subtotal's indent.
+        # This prevents a subtotal at indent 1 from swallowing sibling rows
+        # at indent 1 that belong to a different group.
+        # -----------------------------------------------------------------
+        subtotals_in_section = []
+        pending_rows: list[tuple[int, list[Optional[Decimal]]]] = []
 
-            for row in rows:
-                is_sub = row.get("is_subtotal", False)
-                vals = row.get("values", [])
-                label = row.get("label", "").lower()
-                indent = row.get("indent_level", 0)
+        for row in rows:
+            is_sub = row.get("is_subtotal", False)
+            vals = row.get("values", [])
+            label = row.get("label", "").lower()
+            indent = row.get("indent_level", 0)
 
-                if is_sub:
-                    if any(kw in label for kw in non_additive_total_keywords):
+            if is_sub:
+                if any(kw in label for kw in non_additive_total_keywords):
+                    pending_rows = []
+                    continue
+
+                # Compute leaf sum from pending rows whose indent > subtotal indent
+                leaf_sums = [Decimal("0") for _ in range(num_periods)]
+                for p_indent, p_vals in pending_rows:
+                    if has_indent_data and p_indent <= indent:
                         continue
+                    for i, v in enumerate(p_vals):
+                        if i < num_periods and v is not None and v >= 0:
+                            leaf_sums[i] += v
 
-                    parsed_vals = [_parse_amount(v) for v in vals]
-                    subtotals_in_section.append({
-                        "label": row.get("label", ""),
-                        "values": parsed_vals,
-                        "leaf_sums": [s for s in running_leaf_sums],
-                        "parent_sums": [sum(s[i] for s in seen_subtotals_stack) if seen_subtotals_stack else Decimal("0") for i in range(num_periods)],
-                    })
-                    seen_subtotals_stack.append(parsed_vals)
-                    running_leaf_sums = [Decimal("0") for _ in range(num_periods)]
-                elif indent > 0:
-                    for i, v in enumerate(vals):
-                        if i < num_periods:
-                            parsed = _parse_amount(v)
-                            if parsed is not None:
-                                if parsed < 0:
-                                    has_negative_line_item = True
-                                else:
-                                    running_leaf_sums[i] += parsed
-                else:
-                    pass
-        else:
-            running_leaf_sums = [Decimal("0") for _ in range(num_periods)]
-
-            for row in rows:
-                is_sub = row.get("is_subtotal", False)
-                vals = row.get("values", [])
-                label = row.get("label", "").lower()
-
-                if is_sub:
-                    if any(kw in label for kw in non_additive_total_keywords):
-                        continue
-
-                    parsed_vals = [_parse_amount(v) for v in vals]
-                    subtotals_in_section.append({
-                        "label": row.get("label", ""),
-                        "values": parsed_vals,
-                        "leaf_sums": [s for s in running_leaf_sums],
-                        "parent_sums": [sum(s[i] for s in seen_subtotals_stack) if seen_subtotals_stack else Decimal("0") for i in range(num_periods)],
-                    })
-                    seen_subtotals_stack.append(parsed_vals)
-                    running_leaf_sums = [Decimal("0") for _ in range(num_periods)]
-                else:
-                    for i, v in enumerate(vals):
-                        if i < num_periods:
-                            parsed = _parse_amount(v)
-                            if parsed is not None:
-                                if parsed < 0:
-                                    has_negative_line_item = True
-                                else:
-                                    running_leaf_sums[i] += parsed
+                parsed_vals = [_parse_amount(v) for v in vals]
+                subtotals_in_section.append({
+                    "label": row.get("label", ""),
+                    "values": parsed_vals,
+                    "leaf_sums": leaf_sums,
+                })
+                pending_rows = []
+            else:
+                p_vals = [_parse_amount(v) for v in vals]
+                pending_rows.append((indent, p_vals))
 
         if not subtotals_in_section:
             continue
@@ -549,17 +553,12 @@ def _run_section_sum_checks(data: dict, statement_type: StatementType) -> list[t
                     continue
 
                 leaf_sum = sub["leaf_sums"][i]
-                parent_sum = sub["parent_sums"][i]
-                tolerance = _equation_tolerance(sub_val)
-
-                # Determine the best expected value
-                expected = leaf_sum if leaf_sum != 0 else parent_sum
-                if expected == 0:
+                if leaf_sum == 0:
                     continue
 
-                diff = abs(sub_val - expected)
+                tolerance = _equation_tolerance(sub_val)
+                diff = abs(sub_val - leaf_sum)
 
-                # Materiality gate: skip reporting if under $1K
                 if _materiality_gate(diff):
                     continue
 
@@ -569,22 +568,19 @@ def _run_section_sum_checks(data: dict, statement_type: StatementType) -> list[t
                     else f"col {i + 1}"
                 )
 
-                # Within tolerance → ADVISORY (still report it)
                 if diff <= tolerance:
                     discrepancies.append((
                         f"Section '{section.get('name', '')}' subtotal '{sub['label']}' "
-                        f"period {period_label}: extracted {sub_val} vs expected {expected} "
+                        f"period {period_label}: extracted {sub_val} vs expected {leaf_sum} "
                         f"(diff: {diff}, within tolerance)",
                         True,
                     ))
                     continue
 
-                # Negative line items present → ADVISORY only
-                # (e.g. COGS where Ending Inventories are subtracted)
                 if has_negative_line_item:
                     discrepancies.append((
                         f"Section '{section.get('name', '')}' subtotal '{sub['label']}' "
-                        f"period {period_label}: extracted {sub_val} vs expected {expected} "
+                        f"period {period_label}: extracted {sub_val} vs expected {leaf_sum} "
                         f"(diff: {diff}, exceeds tolerance; negative line items present — "
                         f"may be intentional subtraction)",
                         True,
@@ -593,7 +589,7 @@ def _run_section_sum_checks(data: dict, statement_type: StatementType) -> list[t
 
                 discrepancies.append((
                     f"Section '{section.get('name', '')}' subtotal '{sub['label']}' "
-                    f"period {period_label}: extracted {sub_val} vs expected {expected} "
+                    f"period {period_label}: extracted {sub_val} vs expected {leaf_sum} "
                     f"(diff: {diff}, exceeds tolerance)",
                     False,
                 ))
@@ -770,6 +766,41 @@ def _ocr_text_quality(page_texts: list[str]) -> str:
     space_count = all_text.count(" ")
     char_count = len(all_text.replace("\n", "").replace(" ", ""))
     if char_count > 0 and space_count / char_count < 0.05:
+        return "poor"
+
+    # Heuristic 1b: numeric formatting corruption
+    # Detect numbers with spaces inside digits (e.g. "758 758 28") or
+    # misplaced dots ("186.714.55").  Multiple commas like "1,234,567"
+    # are normal thousand separators and must NOT be flagged.
+    corrupted_numeric = 0
+    numeric_tokens = 0
+    for token in all_text.split():
+        if len(token) >= 2 and token[0].isdigit() and token[-1].isdigit():
+            numeric_tokens += 1
+            # Spaces inside the number are the hallmark of OCR corruption.
+            # We check each whitespace-split token individually so spaces
+            # between distinct numbers (e.g. "1,234,567   987,654") are
+            # not confused with spaces inside one number.
+            inner = token[1:-1]
+            if " " in inner:
+                corrupted_numeric += 1
+            elif inner.count(".") > 1:
+                corrupted_numeric += 1
+    if numeric_tokens and corrupted_numeric / numeric_tokens > 0.20:
+        return "acceptable"
+
+    # Heuristic 1c: split numeric values (column-misalignment artifact)
+    # When pytesseract misreads a table, a single value like "186,714.55"
+    # often becomes two adjacent tokens "186.714 55" on the same line.
+    # If >5% of lines show this pattern, numeric ground truth is unreliable.
+    split_value_lines = 0
+    for line in all_text.splitlines():
+        tokens = line.split()
+        numeric = [t for t in tokens if len(t) >= 2 and t[0].isdigit() and t[-1].isdigit()]
+        if len(numeric) == 2 and len(numeric[1]) == 2:
+            split_value_lines += 1
+    total_lines = len(all_text.splitlines())
+    if total_lines > 0 and split_value_lines / total_lines > 0.05:
         return "poor"
 
     # Heuristic 2: garbled pytesseract output

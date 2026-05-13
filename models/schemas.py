@@ -24,12 +24,44 @@ class StatementRow(BaseModel):
     confidence: Optional[str] = None
     reasoning: Optional[str] = None
 
+    # ------------------------------------------------------------------
+    # Dict-like interface for backward compatibility
+    # ------------------------------------------------------------------
+
+    def __setitem__(self, key: str, value):
+        setattr(self, key, value)
+
+    def __getitem__(self, key: str):
+        return getattr(self, key)
+
+    def get(self, key: str, default=None):
+        return getattr(self, key, default)
+
+    def __contains__(self, key: str) -> bool:
+        return hasattr(self, key)
+
 
 class StatementSection(BaseModel):
     """A named section of a financial statement (e.g. ASSETS, REVENUE)."""
 
     name: str
     rows: List[StatementRow] = Field(default_factory=list)
+
+    # ------------------------------------------------------------------
+    # Dict-like interface for backward compatibility
+    # ------------------------------------------------------------------
+
+    def __setitem__(self, key: str, value):
+        setattr(self, key, value)
+
+    def __getitem__(self, key: str):
+        return getattr(self, key)
+
+    def get(self, key: str, default=None):
+        return getattr(self, key, default)
+
+    def __contains__(self, key: str) -> bool:
+        return hasattr(self, key)
 
 
 class StatementData(BaseModel):
@@ -43,6 +75,22 @@ class StatementData(BaseModel):
     statement_type: str
     periods: List[str] = Field(default_factory=list)
     sections: List[StatementSection] = Field(default_factory=list)
+
+    # ------------------------------------------------------------------
+    # Dict-like interface for backward compatibility
+    # ------------------------------------------------------------------
+
+    def __setitem__(self, key: str, value):
+        setattr(self, key, value)
+
+    def __getitem__(self, key: str):
+        return getattr(self, key)
+
+    def get(self, key: str, default=None):
+        return getattr(self, key, default)
+
+    def __contains__(self, key: str) -> bool:
+        return hasattr(self, key)
 
     # ------------------------------------------------------------------
     # Construction

@@ -79,6 +79,8 @@ def _build_extraction_prompt(
     retry_context: Optional[dict] = None,
     ocr_text: str = "",
     retry_count: int = 0,
+    is_continuation: bool = False,
+    prev_page_ocr: str = "",
 ) -> str:
     """
     Build extraction prompt, appending evaluator feedback on retry.
@@ -90,10 +92,26 @@ def _build_extraction_prompt(
     """
     from utils.vlm_utils import EXTRACTION_PROMPTS
     base = EXTRACTION_PROMPTS[statement_type]
-    if not feedback and not retry_context:
-        return base
 
     parts = [base]
+
+    # Continuation pages: tell the VLM this is page 2+ of a multi-page statement
+    if is_continuation:
+        parts.append(
+            "NOTE: This image is a CONTINUATION PAGE of a multi-page financial statement. "
+            "If the previous page ended mid-section, continue that SAME section here. "
+            "Do NOT create a new section name for a continuation. "
+            "Use the SAME section names as on previous pages."
+        )
+        if prev_page_ocr:
+            snippet = prev_page_ocr[:1500].replace("\n", " ")
+            parts.append(
+                f"PREVIOUS PAGE OCR CONTEXT (for section-name reference only): {snippet}"
+            )
+
+    if not feedback and not retry_context:
+        return "\n\n".join(parts)
+
     parts.append("IMPORTANT — CORRECTIONS FROM PREVIOUS EXTRACTION ATTEMPT:")
 
     # Phase 3 — targeted prompt addendum based on failure categories
@@ -231,6 +249,15 @@ def extractor_node(state: dict) -> dict:
                 auto_rotate=Config.AUTO_CORRECT_ORIENTATION
             )
 
+        # Determine if this is a continuation page
+        pages = statement_pages.get(statement_type, [])
+        page_idx = pages.index(page_num) if page_num in pages else 0
+        is_continuation = page_idx > 0
+        prev_ocr = ""
+        if is_continuation and page_texts.get(statement_type):
+            prev_texts = page_texts[statement_type][:page_idx]
+            prev_ocr = "\n".join(t for t in prev_texts if t)
+
         try:
             feedback = feedback_map.get(statement_type, "")
             ctx = retry_context_map.get(statement_type)
@@ -241,7 +268,9 @@ def extractor_node(state: dict) -> dict:
                 retry_context=ctx,
                 ocr_text=ocr_text,
                 retry_count=new_retry_count,
-            ) if (feedback or ctx) else None
+                is_continuation=is_continuation,
+                prev_page_ocr=prev_ocr,
+            ) if (feedback or ctx or is_continuation) else None
             page_data = vlm_extract_statement(
                 img_path, statement_type, extraction_model,
                 run_id=run_id, prompt=prompt
@@ -253,88 +282,141 @@ def extractor_node(state: dict) -> dict:
             print(f"  ⚠️  Error extracting page {page_num}: {e}")
             return None
 
-    def extract_statement_type(statement_type: StatementType) -> tuple[StatementType, Optional[dict]]:
-        """Extract all pages for a single statement type."""
-        pages = statement_pages.get(statement_type, [])
-        if not pages:
-            logging.info(f"No pages found for {statement_type.value}")
-            return (statement_type, None)
+    # -----------------------------------------------------------------
+    # Pure merge helpers (module-level so they can be reused / tested)
+    # -----------------------------------------------------------------
+    def _normalize_section_name(name: str) -> str:
+        """Normalize for matching: lower, strip continuation suffixes."""
+        name = name.strip().lower()
+        name = re.sub(r"\s*\(continued\)", "", name, flags=re.IGNORECASE)
+        name = re.sub(r"\s*-\s*continued", "", name, flags=re.IGNORECASE)
+        return name
 
-        logging.info(f"Extracting {statement_type.value} from pages {pages}")
-        print(f"\n📊 Extracting {statement_type.value.replace('_', ' ').title()}…")
+    def _row_key(row: dict) -> tuple:
+        """Unique key for deduplication."""
+        return (row.get("label", ""), tuple(row.get("values", [])))
+
+    def _merge_pages(
+        statement_type: StatementType,
+        page_results: list[tuple[int, Optional[dict]]],
+    ) -> Optional[dict]:
+        """Merge per-page extractions into a single statement dict.
+
+        Pages are merged in page-number order so row ordering is preserved
+        regardless of which extraction future finished first.
+        """
+        page_results = [(pn, pd) for pn, pd in page_results if pd is not None]
+        if not page_results:
+            return None
+
+        page_results.sort(key=lambda x: x[0])
 
         statement_data: Optional[dict] = None
-        existing_section_names: set[str] = set()
         normalized_to_actual: dict[str, str] = {}
 
-        def _normalize_section_name(name: str) -> str:
-            """Normalize for matching: lower, strip continuation suffixes."""
-            name = name.strip().lower()
-            name = re.sub(r"\s*\(continued\)", "", name, flags=re.IGNORECASE)
-            name = re.sub(r"\s*-\s*continued", "", name, flags=re.IGNORECASE)
-            return name
-
-        def _row_key(row: dict) -> tuple:
-            """Unique key for deduplication."""
-            return (row.get("label", ""), tuple(row.get("values", [])))
-
-        for page_num in pages:
-            print(f"  Extracting page {page_num}…")
-            page_data = extract_single_page(statement_type, page_num)
-
-            if page_data is None:
-                continue
-
+        for page_num, page_data in page_results:
             if statement_data is None:
                 statement_data = page_data
-                existing_section_names = {s["name"] for s in statement_data.get("sections", [])}
                 normalized_to_actual = {
-                    _normalize_section_name(s["name"]): s["name"]
+                    _normalize_section_name(s.get("name", "")): s.get("name", "")
                     for s in statement_data.get("sections", [])
                 }
             else:
-                # Merge continuation pages
                 for section in page_data.get("sections", []):
                     section_name = section.get("name", "")
+                    if not section_name:
+                        continue
+
                     normalized = _normalize_section_name(section_name)
 
                     if normalized in normalized_to_actual:
                         actual_name = normalized_to_actual[normalized]
                         for s in statement_data.get("sections", []):
-                            if s["name"] == actual_name:
+                            if s.get("name") == actual_name:
                                 existing_rows = {_row_key(r) for r in s.get("rows", [])}
                                 for row in section.get("rows", []):
                                     if _row_key(row) not in existing_rows:
                                         s["rows"].append(row)
                                         existing_rows.add(_row_key(row))
+                                break
                     else:
                         statement_data["sections"].append(section)
-                        existing_section_names.add(section_name)
                         normalized_to_actual[normalized] = section_name
 
-                # Merge periods if new ones appeared
                 for p in page_data.get("periods", []):
                     if p not in statement_data.get("periods", []):
                         statement_data["periods"].append(p)
 
         if statement_data:
-            logging.info(f"Extraction complete: {len(statement_data.get('sections', []))} sections")
-            print(f"  ✅ {statement_type.value.replace('_', ' ').title()}: {len(statement_data.get('sections', []))} sections")
-        else:
-            logging.warning(f"No data extracted for {statement_type.value}")
-            print(f"  ⚠️  No data extracted for {statement_type.value}")
+            logging.info(
+                f"Extraction complete for {statement_type.value}: "
+                f"{len(statement_data.get('sections', []))} sections"
+            )
+            print(
+                f"  ✅ {statement_type.value.replace('_', ' ').title()}: "
+                f"{len(statement_data.get('sections', []))} sections"
+            )
+        return statement_data
 
-        return (statement_type, statement_data)
+    # -----------------------------------------------------------------
+    # Infer worker cap from model name / environment
+    # -----------------------------------------------------------------
+    def _infer_worker_cap() -> int:
+        """Return max concurrent VLM calls based on backend."""
+        model = extraction_model or Config.EXTRACTION_MODEL
+        if ":cloud" in model or "claude-" in model:
+            return Config.MAX_PARALLEL_PAGES_CLOUD
+        return Config.MAX_PARALLEL_PAGES_LOCAL
 
-    # Extract statement types in parallel (on retry, only failed types)
-    # Cap workers to 3 to prevent overwhelming Ollama
-    with ThreadPoolExecutor(max_workers=min(len(types_to_extract), 3)) as executor:
-        futures = {executor.submit(extract_statement_type, st): st for st in types_to_extract}
+    # -----------------------------------------------------------------
+    # Fan-out: one task per (statement_type, page_num)
+    # -----------------------------------------------------------------
+    tasks: list[tuple[StatementType, int]] = []
+    for st in types_to_extract:
+        for page_num in statement_pages.get(st, []):
+            tasks.append((st, page_num))
+
+    total_pages = len(tasks)
+    if total_pages == 0:
+        logging.error("No pages to extract")
+        print("❌ No pages to extract.")
+        return {
+            "extracted_data": {},
+            "error_message": "No pages to extract",
+            "retry_count": new_retry_count,
+            "run_id": run_id,
+            "page_texts": page_texts,
+        }
+
+    max_workers = min(total_pages, _infer_worker_cap())
+    print(f"🚀 Fanning out {total_pages} page(s) across {max_workers} worker(s)\n")
+
+    page_results: Dict[StatementType, list[tuple[int, Optional[dict]]]] = {}
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(extract_single_page, st, pn): (st, pn)
+            for st, pn in tasks
+        }
 
         for future in as_completed(futures):
-            statement_type, data = future.result(timeout=300)
-            if data:
-                all_data[statement_type] = data
+            st, pn = futures[future]
+            try:
+                data = future.result(timeout=300)
+            except Exception as e:
+                logging.error(f"  Error extracting {st.value} page {pn}: {e}")
+                print(f"  ⚠️  Error extracting {st.value} page {pn}: {e}")
+                data = None
+            page_results.setdefault(st, []).append((pn, data))
+
+    # Merge per statement type in page-number order
+    for st in types_to_extract:
+        merged = _merge_pages(st, page_results.get(st, []))
+        if merged:
+            all_data[st] = merged
+        else:
+            logging.warning(f"No data extracted for {st.value}")
+            print(f"  ⚠️  No data extracted for {st.value}")
 
     # OCR fallback: for scanned PDFs where pdfplumber text is empty,
     # run OCR on the cached rasterized images to build ground-truth text

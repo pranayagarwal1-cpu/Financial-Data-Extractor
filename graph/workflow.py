@@ -63,6 +63,13 @@ def create_workflow(statement_types: list = None) -> StateGraph:
             StatementType.CASH_FLOW
         ]
 
+    # Defensive: ensure graph.state is in sys.modules so LangGraph's
+    # get_type_hints(AgentState) can resolve forward references.
+    # Streamlit's script re-loader may clear it between re-runs.
+    import sys
+    if "graph.state" not in sys.modules:
+        import graph.state  # noqa: F401
+
     # Initialize the graph with state
     workflow = StateGraph(AgentState)
 
