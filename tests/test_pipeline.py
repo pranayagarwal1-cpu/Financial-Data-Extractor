@@ -13,7 +13,7 @@ from pathlib import Path
 import openpyxl
 import pytest
 
-from main import process_pdf
+from main import process_single_pdf
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -26,7 +26,7 @@ def _fixture_exists(name: str) -> bool:
 def test_known_good_pdf_passes():
     """A known-good PDF should score > 8.0 overall."""
     pdf = FIXTURES / "known_good" / "standard.pdf"
-    result = process_pdf(str(pdf), no_categorization=True)
+    result = process_single_pdf(str(pdf), enable_categorization=False)
 
     for st, eval_result in result.get("evaluation_result", {}).items():
         scores = eval_result.get("scores", {})
@@ -43,7 +43,7 @@ def test_known_bad_pdfs(pdf, expected_failures):
     if not _fixture_exists(pdf):
         pytest.skip(f"fixture missing: {pdf}")
 
-    result = process_pdf(str(FIXTURES / pdf), no_categorization=True)
+    result = process_single_pdf(str(FIXTURES / pdf), enable_categorization=False)
     failed_checks = []
     for eval_result in result.get("evaluation_result", {}).values():
         for finding in eval_result.get("findings", []):
@@ -58,7 +58,7 @@ def test_known_bad_pdfs(pdf, expected_failures):
 def test_quality_report_in_excel():
     """Every Excel output must contain a Quality Report sheet."""
     pdf = FIXTURES / "known_good" / "standard.pdf"
-    result = process_pdf(str(pdf), no_categorization=True)
+    result = process_single_pdf(str(pdf), enable_categorization=False)
 
     for path in result.get("output_files", []):
         if path.endswith(".xlsx"):
@@ -74,7 +74,7 @@ def test_evaluator_latency_regression():
     pdf = FIXTURES / "known_good" / "standard.pdf"
     times = []
     for _ in range(3):
-        result = process_pdf(str(pdf), no_categorization=True)
+        result = process_single_pdf(str(pdf), enable_categorization=False)
         # Extract evaluator timing from state if available; otherwise skip
         eval_time = result.get("evaluator_timing_ms", 0)
         if eval_time:

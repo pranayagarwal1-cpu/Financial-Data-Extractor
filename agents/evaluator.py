@@ -1410,6 +1410,8 @@ def evaluator_node(state: dict) -> dict:
 
         try:
             # Normalize indentation before running programmatic checks
+            import copy
+            data = copy.deepcopy(data)
             data = _normalize_indent_levels(data)
 
             # Penalty ledger prevents double-penalizing the same error

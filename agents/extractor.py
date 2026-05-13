@@ -332,7 +332,7 @@ def extractor_node(state: dict) -> dict:
         futures = {executor.submit(extract_statement_type, st): st for st in types_to_extract}
 
         for future in as_completed(futures):
-            statement_type, data = future.result()
+            statement_type, data = future.result(timeout=300)
             if data:
                 all_data[statement_type] = data
 

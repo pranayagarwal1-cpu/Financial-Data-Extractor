@@ -53,6 +53,7 @@ def setup_logging(pdf_path: str) -> Path:
     # Remove previous FileHandlers so each PDF gets its own log file
     for h in list(logger.handlers):
         if isinstance(h, logging.FileHandler):
+            h.close()
             logger.removeHandler(h)
 
     # Add file handler for this PDF

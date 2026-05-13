@@ -36,6 +36,7 @@ def _ocr_image(image_path: str) -> str:
         text = pytesseract.image_to_string(Image.open(image_path))
         return text or ""
     except Exception:
+        logging.warning("OCR failed for %s", image_path, exc_info=True)
         return ""
 
 
