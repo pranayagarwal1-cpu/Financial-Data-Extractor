@@ -15,9 +15,11 @@ pydantic>=2.0
 
 # PDF + data
 pdfplumber==0.11.8
-pdf2image==1.17.0
 pandas==2.3.3
 openpyxl==3.1.5
+
+# Image manipulation (used for auto-orientation correction)
+Pillow>=9.1
 
 # Frontend
 streamlit==1.50.0
