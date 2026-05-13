@@ -1130,12 +1130,12 @@ def _run_structure_checks(data: dict, statement_type: StatementType) -> SectionR
     else:
         findings.append(CheckFinding("C1-C3", "PASS", "Accounting equations balance"))
 
-    # C4 — Section sum reconciliation
+    # C4 — Section sum reconciliation (advisory-only: false positives from
+    # cross-page section splits and mid-section subtotals are too noisy)
     sum_discrepancies = _run_section_sum_checks(data, statement_type)
     if sum_discrepancies:
-        for msg, is_advisory in sum_discrepancies:
-            status = "ADVISORY" if is_advisory else "FAIL"
-            findings.append(CheckFinding("C4", status, msg))
+        for msg, _ in sum_discrepancies:
+            findings.append(CheckFinding("C4", "ADVISORY", msg))
     else:
         findings.append(CheckFinding("C4", "PASS", "Subtotals reconcile with leaf rows"))
 
@@ -1238,8 +1238,7 @@ def _run_structure_checks(data: dict, statement_type: StatementType) -> SectionR
 
     # Score
     hard_fail = any(f.status == "FAIL" for f in findings)
-    any_sum_fail = any(f.status == "FAIL" and f.check_id == "C4" for f in findings)
-    score = 10.0 if eq_passed and not any_sum_fail else 3.0
+    score = 10.0 if eq_passed else 3.0
     if hard_fail:
         score = min(score, 3.0)
     return SectionResult(score=round(score, 1), findings=findings, hard_fail=hard_fail)
