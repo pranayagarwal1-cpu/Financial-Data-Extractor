@@ -25,5 +25,8 @@ streamlit==1.50.0
 # Tests
 pytest>=8.0.0,<9.0.0
 
+# Token counting (OpenAI-compatible tokenization)
+tiktoken>=0.7.0
+
 # Image orientation / OCR helpers (optional but recommended)
 pytesseract>=0.3.10

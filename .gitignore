@@ -87,8 +87,11 @@ credentials.json
 .streamlit/secrets.toml
 .streamlit/usage.json
 
-# Model files (if any large downloads)
-models/
+# Large ML model weights/downloads (not our Pydantic schemas package)
+# weights/
+# *.onnx
+# *.pt
+# *.pth
 
 # Claude Code local settings
 .claude/settings.local.json
