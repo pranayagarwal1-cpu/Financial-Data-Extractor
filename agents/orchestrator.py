@@ -331,7 +331,9 @@ def save_outputs(state: dict) -> dict:
     output_files = []
 
     evaluation_results = state.get("evaluation_result", {})
+    cat_evaluation_results = state.get("cat_evaluation_result", {})
     retry_count = state.get("retry_count", 0)
+    cat_retry_count = state.get("cat_retry_count", 0)
 
     for statement_type, data in data_to_save.items():
         statement_name = statement_type.value
@@ -371,9 +373,32 @@ def save_outputs(state: dict) -> dict:
                 "retry_count": retry_count,
             }
 
+        # Build Categorization Report metadata per statement
+        cat_eval_result = cat_evaluation_results.get(statement_type) or cat_evaluation_results.get(statement_type.value)
+        cat_report_metadata = None
+        if cat_eval_result and statement_name == "income_statement":
+            cat_scores = cat_eval_result.get("scores", {})
+            overall_cat_score = sum(cat_scores.values()) / max(len(cat_scores), 1) if cat_scores else 0.0
+            cat_report_metadata = {
+                "pdf_name": pdf_name,
+                "statement_type": statement_name,
+                "run_id": run_id,
+                "timestamp": timestamp,
+                "overall_passed": cat_eval_result.get("passed", False),
+                "overall_score": round(overall_cat_score, 1),
+                "scores": cat_scores,
+                "heuristics": cat_eval_result.get("heuristics", {}),
+                "feedback": cat_eval_result.get("feedback", ""),
+                "cat_retry_count": cat_retry_count,
+            }
+
         # Save Excel
         excel_path = str(OUTPUT_DIR / f"{pdf_name}_{statement_name}_{timestamp}.xlsx")
-        save_to_excel(data, excel_path, report_metadata=report_metadata)
+        save_to_excel(
+            data, excel_path,
+            report_metadata=report_metadata,
+            cat_report_metadata=cat_report_metadata,
+        )
         logging.info(f"Excel saved: {excel_path}")
         print(f"💾 {statement_name.replace('_', ' ').title()} Excel: {excel_path}")
         output_files.append(excel_path)

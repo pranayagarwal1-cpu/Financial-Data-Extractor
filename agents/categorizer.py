@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -114,6 +115,15 @@ def extract_line_items_from_statement(data: dict) -> List[dict]:
 
 
 MAX_BATCH_SIZE = 25
+
+
+@dataclass
+class BatchResult:
+    """Result of an LLM batch matching operation."""
+    results: List[dict]
+    batch_count: int = 0
+    batch_failure_count: int = 0
+    llm_duration_ms: float = 0.0
 
 
 def _llm_match_single_batch(batch_items: List[dict], run_id: str, is_retry: bool, practice_id: str) -> List[dict]:
@@ -327,7 +337,7 @@ Set needs_review=true for:
         return [{"label": item["label"], "error": f"LLM parse error: {e}"} for item in batch_items]
 
 
-def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: bool = False, practice_id: str = None) -> List[dict]:
+def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: bool = False, practice_id: str = None) -> BatchResult:
     """
     Use LLM to match unmatched line items to CoA accounts.
 
@@ -342,14 +352,18 @@ def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: b
         practice_id: Optional practice ID for loading learned corrections
 
     Returns:
-        List of LLM match results with account_id, confidence, reasoning
+        BatchResult with results list and metadata (batch_count, failures, duration)
     """
     if not unmatched_items:
-        return []
+        return BatchResult(results=[], batch_count=0, batch_failure_count=0, llm_duration_ms=0.0)
+
+    llm_start = time.time()
 
     # No need to parallelize a single batch
     if len(unmatched_items) <= MAX_BATCH_SIZE:
-        return _llm_match_single_batch(unmatched_items, run_id, is_retry, practice_id)
+        results = _llm_match_single_batch(unmatched_items, run_id, is_retry, practice_id)
+        duration_ms = (time.time() - llm_start) * 1000
+        return BatchResult(results=results, batch_count=1, batch_failure_count=0, llm_duration_ms=duration_ms)
 
     # Build batches
     batches = []
@@ -381,6 +395,7 @@ def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: b
                 failed_batches.append((batch_idx, batches[batch_idx]))
 
     # Retry failed batches sequentially with backoff
+    retry_failures = 0
     if failed_batches:
         print(f"  Retrying {len(failed_batches)} failed batch(s) sequentially...")
         for attempt, (batch_idx, batch) in enumerate(failed_batches, 1):
@@ -393,8 +408,15 @@ def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: b
             except Exception as e:
                 logging.error(f"Retry batch {batch_idx + 1} failed again: {e}")
                 print(f"    ❌ Retry batch {batch_idx + 1} failed again: {e}")
+                retry_failures += 1
 
-    return all_results
+    duration_ms = (time.time() - llm_start) * 1000
+    return BatchResult(
+        results=all_results,
+        batch_count=len(batches),
+        batch_failure_count=retry_failures,
+        llm_duration_ms=duration_ms,
+    )
 
 
 def apply_categorization_to_statement(
@@ -635,12 +657,18 @@ def categorizer_node(state: dict) -> dict:
 
     categorized_data = {}
     all_review_items = []
+    cat_metrics_by_statement: Dict[str, dict] = {}
     summary_stats = {
         "total_line_items": 0,
         "auto_categorized": 0,
         "llm_matched": 0,
         "needs_review": 0,
     }
+
+    # Accumulate batch metadata across statements
+    total_batch_count = 0
+    total_batch_failures = 0
+    total_llm_duration_ms = 0.0
 
     # Process each statement type
     for statement_type, data in extracted_data.items():
@@ -689,7 +717,11 @@ def categorizer_node(state: dict) -> dict:
                 if retry_labels:
                     retry_items = [item for item in postable_items if item["label"] in retry_labels]
                     print(f"  Selective retry: {len(retry_items)} of {len(postable_items)} items need re-categorization...")
-                    llm_results = llm_match_batch(retry_items, run_id, is_retry=is_retry, practice_id=practice_id)
+                    batch_res = llm_match_batch(retry_items, run_id, is_retry=is_retry, practice_id=practice_id)
+                    llm_results = batch_res.results
+                    total_batch_count += batch_res.batch_count
+                    total_batch_failures += batch_res.batch_failure_count
+                    total_llm_duration_ms += batch_res.llm_duration_ms
 
                     for llm_result in llm_results:
                         if "account_id" in llm_result:
@@ -712,7 +744,11 @@ def categorizer_node(state: dict) -> dict:
                     categorized = prev_data
             else:
                 # Fallback: no previous data, categorize all
-                llm_results = llm_match_batch(postable_items, run_id, is_retry=is_retry, practice_id=practice_id)
+                batch_res = llm_match_batch(postable_items, run_id, is_retry=is_retry, practice_id=practice_id)
+                llm_results = batch_res.results
+                total_batch_count += batch_res.batch_count
+                total_batch_failures += batch_res.batch_failure_count
+                total_llm_duration_ms += batch_res.llm_duration_ms
 
                 for llm_result in llm_results:
                     if "account_id" in llm_result:
@@ -734,7 +770,11 @@ def categorizer_node(state: dict) -> dict:
         else:
             # First pass: categorize all items
             print(f"  LLM matching for {len(postable_items)} items with section-aware rules...")
-            llm_results = llm_match_batch(postable_items, run_id, is_retry=is_retry, practice_id=practice_id)
+            batch_res = llm_match_batch(postable_items, run_id, is_retry=is_retry, practice_id=practice_id)
+            llm_results = batch_res.results
+            total_batch_count += batch_res.batch_count
+            total_batch_failures += batch_res.batch_failure_count
+            total_llm_duration_ms += batch_res.llm_duration_ms
 
             for llm_result in llm_results:
                 if "account_id" in llm_result:
@@ -752,13 +792,39 @@ def categorizer_node(state: dict) -> dict:
                         })
 
             # Apply categorization with empty token results (all LLM-based)
-            match_results: Dict[str, MatchResult] = {}
+            match_results: dict = {}
             categorized = apply_categorization_to_statement(data, match_results, llm_results)
 
         categorized_data[statement_type] = categorized
 
         # Print summary
         print(f"  Summary: {summary_stats['llm_matched']} categorized, {summary_stats['needs_review']} need review")
+
+    # Compute detailed categorization metrics
+    from utils.cat_metrics import compute_categorization_metrics
+
+    for st_key, data in categorized_data.items():
+        st_name = st_key.value if hasattr(st_key, 'value') else str(st_key)
+        if st_name != "income_statement":
+            continue
+        metrics = compute_categorization_metrics(
+            data,
+            batch_count=total_batch_count,
+            batch_failure_count=total_batch_failures,
+            llm_duration_ms=total_llm_duration_ms,
+        )
+        cat_metrics_by_statement[st_name] = metrics.to_dict()
+        obs.log_categorization_metrics(metrics.to_dict(), run_id)
+
+        # Print richer summary
+        print(f"  📊 Metrics: {metrics.coverage_rate:.1%} coverage, "
+              f"{metrics.high_conf_rate:.1%} high-conf, "
+              f"{metrics.review_rate:.1%} review, "
+              f"{metrics.overall_sanity:.1%} sanity")
+        if metrics.section_violations:
+            print(f"     ⚠️  {len(metrics.section_violations)} section sanity violation(s)")
+        if metrics.balance_sheet_codes_used:
+            print(f"     ⚠️  Balance-sheet codes used: {set(metrics.balance_sheet_codes_used)}")
 
     # Increment cat retry count
     new_cat_retry_count = cat_retry_count + 1
@@ -772,5 +838,6 @@ def categorizer_node(state: dict) -> dict:
         "categorization_summary": summary_stats,
         "review_queue": all_review_items,
         "cat_retry_count": new_cat_retry_count,
+        "cat_metrics": cat_metrics_by_statement,
         "run_id": run_id
     }

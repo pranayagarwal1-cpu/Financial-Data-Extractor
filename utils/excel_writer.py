@@ -218,7 +218,172 @@ def _write_quality_report_sheet(wb: openpyxl.Workbook, metadata: dict):
     ws.column_dimensions["D"].width = 14
 
 
-def save_to_excel(data: dict, output_path: str, include_coa_columns: bool = True, report_metadata: dict = None):
+def _write_categorization_report_sheet(wb: openpyxl.Workbook, metadata: dict):
+    """
+    Append a "Categorization Report" sheet to the workbook.
+
+    Layout mirrors the Quality Report sheet but for CoA categorization:
+    - Title, metadata, overall PASS/FAIL
+    - Score breakdown per criterion
+    - Heuristic summary (coverage, confidence, review rate)
+    - Ignored corrections
+    - Evaluator feedback
+    """
+    ws = wb.create_sheet(title="Categorization Report")
+
+    dark_blue = PatternFill("solid", start_color="1F4E79")
+    white_font = Font(name="Arial", bold=True, size=13, color="FFFFFF")
+    header_font = Font(name="Arial", bold=True, size=10, color="FFFFFF")
+    normal_font = Font(name="Arial", size=10)
+    small_font = Font(name="Arial", size=9)
+    pass_fill = PatternFill("solid", start_color="C6EFCE")
+    pass_font = Font(name="Arial", bold=True, size=14, color="006100")
+    fail_fill = PatternFill("solid", start_color="FFC7CE")
+    fail_font = Font(name="Arial", bold=True, size=14, color="9C0006")
+    advisory_fill = PatternFill("solid", start_color="FFEB9C")
+    advisory_font = Font(name="Arial", size=10, color="9C5700")
+    center_align = Alignment(horizontal="center", vertical="center")
+    left_align = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    right_align = Alignment(horizontal="right", vertical="center")
+
+    def _meta_row(row_num: int, label: str, value: str, value_font=None):
+        ws.cell(row=row_num, column=1, value=label).font = normal_font
+        ws.cell(row=row_num, column=2, value=value).font = value_font or normal_font
+        ws.cell(row=row_num, column=1).alignment = left_align
+        ws.cell(row=row_num, column=2).alignment = left_align
+
+    # Row 1 — Title
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=4)
+    title_cell = ws.cell(row=1, column=1, value="CoA Categorization Report")
+    title_cell.font = white_font
+    title_cell.fill = dark_blue
+    title_cell.alignment = center_align
+    ws.row_dimensions[1].height = 24
+
+    # Row 2 — Metadata
+    pdf_name = metadata.get("pdf_name", "")
+    statement_type = metadata.get("statement_type", "")
+    run_id = metadata.get("run_id", "")
+    timestamp = metadata.get("timestamp", "")
+    _meta_row(2, "Statement Type:", statement_type.replace("_", " ").title())
+    _meta_row(3, "PDF Name:", pdf_name)
+    _meta_row(4, "Run ID:", run_id)
+    _meta_row(5, "Timestamp:", timestamp)
+
+    # Row 7 — Overall Status
+    overall_passed = metadata.get("overall_passed", False)
+    status_text = "PASS" if overall_passed else "FAIL"
+    ws.merge_cells(start_row=7, start_column=1, end_row=7, end_column=4)
+    status_cell = ws.cell(row=7, column=1, value=status_text)
+    status_cell.font = pass_font if overall_passed else fail_font
+    status_cell.fill = pass_fill if overall_passed else fail_fill
+    status_cell.alignment = center_align
+    ws.row_dimensions[7].height = 28
+
+    # Row 9 — Score Breakdown header
+    ws.cell(row=9, column=1, value="Criterion").font = header_font
+    ws.cell(row=9, column=1).fill = dark_blue
+    ws.cell(row=9, column=2, value="Score").font = header_font
+    ws.cell(row=9, column=2).fill = dark_blue
+    ws.cell(row=9, column=3, value="Status").font = header_font
+    ws.cell(row=9, column=3).fill = dark_blue
+    header_row = 9
+    row = 10
+
+    scores = metadata.get("scores", {})
+    for criterion in ("coverage", "confidence", "category_sanity",
+                      "reasoning_consistency", "learned_corrections",
+                      "review_burden", "format_validity"):
+        score = scores.get(criterion, 0)
+        passed_criterion = score >= 7
+        ws.cell(row=row, column=1, value=criterion.replace("_", " ").title()).font = normal_font
+        score_cell = ws.cell(row=row, column=2, value=score)
+        score_cell.font = normal_font
+        score_cell.alignment = right_align
+        status_cell = ws.cell(row=row, column=3, value="PASS" if passed_criterion else "FAIL")
+        status_cell.font = pass_font if passed_criterion else fail_font
+        status_cell.fill = pass_fill if passed_criterion else fail_fill
+        row += 1
+
+    # Overall score row
+    ws.cell(row=row, column=1, value="Overall").font = Font(name="Arial", bold=True, size=10)
+    overall_score = metadata.get("overall_score", 0)
+    ws.cell(row=row, column=2, value=overall_score).font = Font(name="Arial", bold=True, size=10)
+    ws.cell(row=row, column=2).alignment = right_align
+    overall_status_cell = ws.cell(row=row, column=3, value="PASS" if overall_passed else "FAIL")
+    overall_status_cell.font = pass_font if overall_passed else fail_font
+    overall_status_cell.fill = pass_fill if overall_passed else fail_fill
+    row += 2
+
+    # Heuristics Summary
+    heuristics = metadata.get("heuristics", {})
+    if heuristics:
+        ws.cell(row=row, column=1, value="Heuristic Summary").font = Font(name="Arial", bold=True, size=10)
+        row += 1
+        for label, value in [
+            ("Postable Items:", heuristics.get("postable_items", "")),
+            ("Categorized Items:", heuristics.get("categorized_items", "")),
+            ("Coverage Rate:", f"{heuristics.get('coverage_rate', 0):.1%}"),
+            ("High Conf Rate:", f"{heuristics.get('high_conf_rate', 0):.1%}"),
+            ("Review Rate:", f"{heuristics.get('review_rate', 0):.1%}"),
+            ("Ignored Corrections:", heuristics.get("ignored_count", 0)),
+        ]:
+            _meta_row(row, label, str(value))
+            row += 1
+        row += 1
+
+    # Ignored Corrections
+    ignored = heuristics.get("ignored_corrections", [])
+    if ignored:
+        ws.cell(row=row, column=1, value="Ignored Learned Corrections:").font = Font(name="Arial", bold=True, size=10)
+        row += 1
+        ws.cell(row=row, column=1, value="Label").font = header_font
+        ws.cell(row=row, column=1).fill = dark_blue
+        ws.cell(row=row, column=2, value="Assigned").font = header_font
+        ws.cell(row=row, column=2).fill = dark_blue
+        ws.cell(row=row, column=3, value="Expected").font = header_font
+        ws.cell(row=row, column=3).fill = dark_blue
+        ws.cell(row=row, column=4, value="Count").font = header_font
+        ws.cell(row=row, column=4).fill = dark_blue
+        row += 1
+        for ign in ignored:
+            ws.cell(row=row, column=1, value=ign.get("label", "")).font = normal_font
+            ws.cell(row=row, column=2, value=ign.get("assigned", "")).font = normal_font
+            ws.cell(row=row, column=2).alignment = center_align
+            assigned_cell = ws.cell(row=row, column=3, value=ign.get("expected", ""))
+            assigned_cell.font = Font(name="Arial", size=10, color="006100")
+            assigned_cell.alignment = center_align
+            ws.cell(row=row, column=4, value=ign.get("count", 1)).font = normal_font
+            ws.cell(row=row, column=4).alignment = center_align
+            row += 1
+        row += 1
+
+    # Evaluator Feedback
+    ws.cell(row=row, column=1, value="Evaluator Feedback:").font = Font(name="Arial", bold=True, size=10)
+    row += 1
+    feedback = metadata.get("feedback", "")
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+    fb_cell = ws.cell(row=row, column=1, value=feedback)
+    fb_cell.font = small_font
+    fb_cell.alignment = left_align
+    ws.row_dimensions[row].height = 60
+    row += 2
+
+    # Retry History
+    cat_retry_count = metadata.get("cat_retry_count", 0)
+    ws.cell(row=row, column=1, value="Retry History:").font = Font(name="Arial", bold=True, size=10)
+    row += 1
+    ws.cell(row=row, column=1, value=f"Cat attempts used: {cat_retry_count}").font = normal_font
+
+    # Column widths
+    ws.column_dimensions["A"].width = 22
+    ws.column_dimensions["B"].width = 14
+    ws.column_dimensions["C"].width = 14
+    ws.column_dimensions["D"].width = 12
+
+
+def save_to_excel(data: dict, output_path: str, include_coa_columns: bool = True,
+                  report_metadata: dict = None, cat_report_metadata: dict = None):
     """
     Save extracted financial statement data to an Excel file.
 
@@ -395,5 +560,9 @@ def save_to_excel(data: dict, output_path: str, include_coa_columns: bool = True
     # Phase 4 — append Quality Report sheet if metadata provided
     if report_metadata:
         _write_quality_report_sheet(wb, report_metadata)
+
+    # Append Categorization Report sheet if metadata provided
+    if cat_report_metadata:
+        _write_categorization_report_sheet(wb, cat_report_metadata)
 
     wb.save(output_path)

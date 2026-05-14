@@ -392,14 +392,33 @@ def cat_evaluator_node(state: dict) -> dict:
             print(f"   - Evaluation: {status}")
             print(f"   - Feedback: {evaluation.get('feedback', 'No feedback')}")
 
-            avg_score = (
-                sum(evaluation.get("scores", {}).values())
-                / max(len(evaluation.get("scores", {})), 1)
-            )
-            obs.log_evaluation_score(
+            scores = evaluation.get("scores", {})
+            avg_score = sum(scores.values()) / max(len(scores), 1) if scores else 0.0
+            obs.log_cat_evaluation_score(
                 statement_type="categorization",
                 score=round(avg_score, 2),
-                details=evaluation.get("scores", {}),
+                details=scores,
+                run_id=run_id,
+            )
+
+            # Log individual check outcomes for observability
+            check_findings = []
+            for criterion, score_val in scores.items():
+                status = "PASS" if score_val >= 7 else "ADVISORY" if score_val >= 5 else "FAIL"
+                check_findings.append({
+                    "check_id": criterion,
+                    "status": status,
+                    "message": f"{criterion}: {score_val}/10",
+                })
+            if heuristics.get("ignored_count", 0) > 0:
+                check_findings.append({
+                    "check_id": "learned_corrections",
+                    "status": "FAIL",
+                    "message": f"{heuristics['ignored_count']} learned correction(s) ignored",
+                })
+            obs.log_check_outcomes(
+                statement_type="categorization",
+                findings=check_findings,
                 run_id=run_id,
             )
 

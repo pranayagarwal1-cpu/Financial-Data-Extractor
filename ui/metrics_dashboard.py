@@ -32,6 +32,19 @@ def render_metrics_dashboard() -> None:
     with col4:
         st.metric("Avg Retries", f"{stats['avg_retries_per_run']:.2f}")
 
+    if stats.get("cat_runs_with_metrics", 0) > 0:
+        st.divider()
+        st.subheader("🏷️ Categorization Trends")
+        ccol1, ccol2, ccol3, ccol4 = st.columns(4)
+        with ccol1:
+            st.metric("Cat Runs", stats["cat_runs_with_metrics"])
+        with ccol2:
+            st.metric("Avg Coverage", f"{stats.get('cat_avg_coverage_rate', 0):.1%}")
+        with ccol3:
+            st.metric("Avg Review Rate", f"{stats.get('cat_avg_review_rate', 0):.1%}")
+        with ccol4:
+            st.metric("Avg Eval Score", f"{stats.get('cat_avg_eval_score', 0):.1f}/10")
+
     st.divider()
     st.subheader("📋 Recent Runs")
     runs_df = pd.DataFrame(recent_runs)

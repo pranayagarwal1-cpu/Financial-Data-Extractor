@@ -167,6 +167,42 @@ def _render_evaluation(eval_result):
                     st.info(f"✅ {feedback}")
 
 
+def _render_categorization_metrics(cat_metrics):
+    if not cat_metrics:
+        return
+    st.markdown("##### 📊 Categorization Metrics")
+    for st_name, metrics in cat_metrics.items():
+        if st_name != "income_statement":
+            continue
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Coverage", f"{metrics.get('coverage_rate', 0):.1%}")
+        with col2:
+            st.metric("High Conf", f"{metrics.get('high_conf_rate', 0):.1%}")
+        with col3:
+            st.metric("Review Rate", f"{metrics.get('review_rate', 0):.1%}")
+        with col4:
+            st.metric("Sanity", f"{metrics.get('overall_sanity', 0):.1%}")
+
+        with st.expander("Detailed Metrics", expanded=False):
+            detail_items = []
+            for k, v in metrics.items():
+                if isinstance(v, float):
+                    detail_items.append({"Metric": k.replace("_", " ").title(), "Value": f"{v:.3f}"})
+                elif isinstance(v, int):
+                    detail_items.append({"Metric": k.replace("_", " ").title(), "Value": v})
+            if detail_items:
+                st.dataframe(pd.DataFrame(detail_items), width="stretch", hide_index=True)
+            violations = metrics.get("section_violations", [])
+            if violations:
+                st.warning(f"⚠️ {len(violations)} section sanity violation(s)")
+                viol_df = pd.DataFrame(violations)
+                st.dataframe(viol_df, width="stretch", hide_index=True)
+            bs_codes = metrics.get("balance_sheet_codes_used", [])
+            if bs_codes:
+                st.error(f"❌ Balance-sheet codes used: {set(bs_codes)}")
+
+
 def _render_categorization_evaluation(cat_eval):
     if not cat_eval:
         return
@@ -350,6 +386,7 @@ def _render_single_result(result):
         )
 
     _render_categorization_evaluation(final_state.get("cat_evaluation_result", {}))
+    _render_categorization_metrics(final_state.get("cat_metrics", {}))
     _render_review_and_correct(statement_files, pdf_name)
 
 

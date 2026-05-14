@@ -92,6 +92,8 @@ class RunMetrics:
     # Categorization-specific
     cat_retry_count: int = 0
     review_queue_count: int = 0
+    cat_metrics: Dict[str, Any] = field(default_factory=dict)
+    cat_evaluation_scores: Dict[str, float] = field(default_factory=dict)
 
 
 class Observability:
@@ -381,6 +383,46 @@ class Observability:
                 runs.append(json.load(f))
         return runs
 
+    def log_categorization_metrics(self, metrics: dict, run_id: Optional[str] = None):
+        """
+        Log detailed categorization metrics.
+
+        Args:
+            metrics: Dict from CategorizationMetrics.to_dict()
+            run_id: Optional run ID to associate with
+        """
+        if run_id and run_id in self._active_runs:
+            self._active_runs[run_id].cat_metrics = metrics
+
+        self.log_event(
+            "categorization_metrics",
+            metrics=metrics,
+            run_id=run_id
+        )
+
+    def log_cat_evaluation_score(self, statement_type: str, score: float,
+                                 details: Optional[Dict] = None,
+                                 run_id: Optional[str] = None):
+        """
+        Log a categorization evaluation score.
+
+        Args:
+            statement_type: Type of statement evaluated
+            score: Overall score (0-10)
+            details: Breakdown of scores by criterion
+            run_id: Optional run ID to associate with
+        """
+        if run_id and run_id in self._active_runs:
+            self._active_runs[run_id].cat_evaluation_scores[statement_type] = score
+
+        self.log_event(
+            "cat_evaluation",
+            statement_type=statement_type,
+            score=score,
+            details=details,
+            run_id=run_id
+        )
+
     def get_stats(self, days: int = 7) -> Dict[str, Any]:
         """
         Get aggregated statistics for recent runs.
@@ -439,6 +481,29 @@ class Observability:
                     model_totals[model]["cost_usd"] + usage.get("cost_usd", 0.0), 6
                 )
 
+        # Categorization stats
+        cat_metrics_list = [r.get("cat_metrics", {}) for r in runs if r.get("cat_metrics")]
+        total_cat_items = sum(m.get("postable_items", 0) for m in cat_metrics_list)
+        total_cat_categorized = sum(m.get("categorized_items", 0) for m in cat_metrics_list)
+        total_cat_review = sum(m.get("needs_review_items", 0) for m in cat_metrics_list)
+        total_cat_split = sum(m.get("split_items", 0) for m in cat_metrics_list)
+        total_cat_violations = sum(len(m.get("section_violations", [])) for m in cat_metrics_list)
+        avg_coverage = (
+            sum(m.get("coverage_rate", 0) for m in cat_metrics_list) / len(cat_metrics_list)
+            if cat_metrics_list else 0
+        )
+        avg_review_rate = (
+            sum(m.get("review_rate", 0) for m in cat_metrics_list) / len(cat_metrics_list)
+            if cat_metrics_list else 0
+        )
+
+        # Cat evaluation stats
+        cat_eval_scores = []
+        for r in runs:
+            for stmt_type, score in r.get("cat_evaluation_scores", {}).items():
+                cat_eval_scores.append(score)
+        avg_cat_eval_score = round(sum(cat_eval_scores) / len(cat_eval_scores), 2) if cat_eval_scores else 0
+
         return {
             "total_runs": total,
             "success_rate": round(successful / total * 100, 1) if total > 0 else 0,
@@ -455,6 +520,16 @@ class Observability:
             "total_cost_usd": round(total_cost, 4),
             "avg_cost_per_run_usd": round(total_cost / total, 4) if total > 0 else 0,
             "per_model_usage": model_totals,
+            # Categorization
+            "cat_runs_with_metrics": len(cat_metrics_list),
+            "cat_total_items": total_cat_items,
+            "cat_total_categorized": total_cat_categorized,
+            "cat_total_review": total_cat_review,
+            "cat_total_split": total_cat_split,
+            "cat_total_violations": total_cat_violations,
+            "cat_avg_coverage_rate": round(avg_coverage, 3),
+            "cat_avg_review_rate": round(avg_review_rate, 3),
+            "cat_avg_eval_score": avg_cat_eval_score,
         }
 
 

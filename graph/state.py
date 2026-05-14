@@ -26,6 +26,7 @@ class AgentState(BaseModel):
     retry_count: int = 0
     cat_retry_count: int = 0
     cat_evaluation_result: Dict[str, Any] = Field(default_factory=dict)
+    cat_metrics: Dict[str, Any] = Field(default_factory=dict)
     output_files: List[str] = Field(default_factory=list)
     error_message: Optional[str] = None
     log_file: Optional[str] = None
