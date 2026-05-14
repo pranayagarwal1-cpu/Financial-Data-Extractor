@@ -320,12 +320,22 @@ def cat_evaluator_node(state: dict) -> dict:
 
             # If nothing to evaluate, skip
             if heuristics["postable_items"] == 0:
-                evaluation_results[st_key] = {
-                    "passed": True,
-                    "feedback": "No postable items to categorize",
-                    "scores": {},
-                    "heuristics": heuristics,
-                }
+                total_rows = sum(len(s.get("rows", [])) for s in data.get("sections", []))
+                if total_rows == 0 and heuristics.get("section_headers", 0) == 0:
+                    # Extraction returned empty — do not auto-pass categorization
+                    evaluation_results[st_key] = {
+                        "passed": False,
+                        "feedback": "No sections or rows extracted — extraction appears empty",
+                        "scores": {},
+                        "heuristics": heuristics,
+                    }
+                else:
+                    evaluation_results[st_key] = {
+                        "passed": True,
+                        "feedback": "No postable items to categorize",
+                        "scores": {},
+                        "heuristics": heuristics,
+                    }
                 continue
 
             # Layer 2: LLM semantic evaluation

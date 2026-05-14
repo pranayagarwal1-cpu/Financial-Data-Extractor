@@ -7,11 +7,14 @@ to serialize clean dictionaries / JSON strings for downstream use.
 
 import json
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class StatementRow(BaseModel):
     """A single line item within a financial statement section."""
+
+    # Preserve extra keys (e.g. categorization dict, line_type) added after extraction
+    model_config = ConfigDict(extra="allow")
 
     label: str
     values: List[Optional[str]] = Field(default_factory=list)
@@ -44,6 +47,8 @@ class StatementRow(BaseModel):
 class StatementSection(BaseModel):
     """A named section of a financial statement (e.g. ASSETS, REVENUE)."""
 
+    model_config = ConfigDict(extra="allow")
+
     name: str
     rows: List[StatementRow] = Field(default_factory=list)
 
@@ -70,6 +75,8 @@ class StatementData(BaseModel):
 
     Maps directly to the JSON structure the VLM is prompted to produce.
     """
+
+    model_config = ConfigDict(extra="allow")
 
     title: str
     statement_type: str

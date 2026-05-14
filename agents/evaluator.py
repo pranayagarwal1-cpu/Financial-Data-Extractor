@@ -249,9 +249,36 @@ def _run_numeric_precheck(data: dict, statement_type: StatementType) -> tuple[fl
     return score, feedback
 
 
+# Lightweight section-header heuristic (mirrors categorizer.py logic)
+# so coverage checks can skip structural labels that legitimately have no values.
+_SECTION_HEADER_PATTERNS = [
+    r"^total\s+(revenue|expenses?|income|cost|sales)$",
+    r"^(revenue|expenses?|income|cost|sales)\s+total$",
+    r"^other\s+(revenue|expenses?|income)$",
+    r"^(gross|net)\s+(profit|income|loss|revenue|margin)$",
+    r"^operating\s+(expenses?|income|profit|revenue)$",
+    r"^cost\s+of\s+(goods\ssold|revenue|sales)$",
+    r"^(revenue|expenses?|income)$",
+    r"^(veterinary|practice)\s+(revenue|income|sales)$",
+]
+
+
+def _is_section_header(label: str) -> bool:
+    label_lower = label.lower().strip()
+    for pat in _SECTION_HEADER_PATTERNS:
+        if re.search(pat, label_lower):
+            return True
+    if label_lower in {"revenue", "expenses", "income", "costs", "other income", "other expenses"}:
+        return True
+    return False
+
+
 def _calculate_missing_values(data: dict) -> tuple[float, list[str]]:
     """
     Calculate the ratio of missing/null values and return individual findings.
+
+    Excludes section headers (structural labels without values) and common
+    null representations like "-" or "N/A" that are legitimate in source docs.
 
     Returns (missing_ratio, list_of_descriptions).
     Each description is like: "Row 'Telephone' period 2025: value is empty"
@@ -265,6 +292,9 @@ def _calculate_missing_values(data: dict) -> tuple[float, list[str]]:
         section_name = section.get("name", "")
         for row in section.get("rows", []):
             label = row.get("label", "")
+            # Skip section headers — structural labels, not postable data rows
+            if _is_section_header(label):
+                continue
             for idx, val in enumerate(row.get("values", [])):
                 total_values += 1
                 if val is None or val == "" or val == "null":
@@ -275,7 +305,7 @@ def _calculate_missing_values(data: dict) -> tuple[float, list[str]]:
                     )
 
     if total_values == 0:
-        return 1.0, descriptions
+        return 0.0, descriptions
     return missing_values / total_values, descriptions
 
 

@@ -9,7 +9,7 @@ Model routing:
 import os
 
 # Default model for all tasks
-DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "qwen3.5:397b-cloud")
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gemma4:31b-cloud")
 
 
 class Config:

@@ -8,7 +8,16 @@ ui/metrics_dashboard.py. Session state defaults live in ui/session.py.
 """
 
 import sys
+import warnings
 from pathlib import Path
+
+# Suppress LangChainPendingDeprecationWarning from langgraph internals
+# (triggered by JsonPlusSerializer import before allowed_objects default changes)
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    module="langgraph.checkpoint.serde.jsonplus",
+)
 
 # Ensure project root is on path before any project imports
 ROOT = Path(__file__).parent.resolve()

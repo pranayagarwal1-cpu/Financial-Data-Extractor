@@ -21,7 +21,15 @@ Statement Types:
 import argparse
 import os
 import sys
+import warnings
 from pathlib import Path
+
+# Suppress LangChainPendingDeprecationWarning from langgraph internals
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    module="langgraph.checkpoint.serde.jsonplus",
+)
 
 from graph.workflow import create_workflow
 from utils.vlm_utils import StatementType
