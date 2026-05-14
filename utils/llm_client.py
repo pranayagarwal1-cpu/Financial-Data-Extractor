@@ -63,7 +63,7 @@ def chat(*, model: str, messages: list, run_id: str = None, **kwargs):
             raise CostLimitExceededError(reason)
 
     if _is_anthropic_model(model):
-        response = _anthropic_chat(model, _convert_messages_for_anthropic(messages), **kwargs)
+        response = _anthropic_chat(model=model, messages=_convert_messages_for_anthropic(messages), **kwargs)
     else:
         # Ollama path — compute actual token counts since Ollama doesn't return them.
         raw = _ollama_chat(model=model, messages=messages, **kwargs)

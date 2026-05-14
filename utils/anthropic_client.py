@@ -45,7 +45,7 @@ def chat(*, model: str, messages: list, **kwargs):
         response["usage"]["total_tokens"]
     """
     client = _get_client()
-    max_tokens = kwargs.pop("max_tokens", 4096)
+    max_tokens = kwargs.pop("max_tokens", 16384)
     response = client.messages.create(
         model=model,
         max_tokens=max_tokens,

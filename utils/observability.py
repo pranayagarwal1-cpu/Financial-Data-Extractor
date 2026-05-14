@@ -57,8 +57,8 @@ def _get_model_rate(model: str) -> Dict[str, float]:
 def _calculate_cost(prompt_tokens: int, completion_tokens: int, model: str) -> float:
     """Calculate estimated cost in USD."""
     rate = _get_model_rate(model)
-    input_cost = (prompt_tokens / 1000) * rate["input"]
-    output_cost = (completion_tokens / 1000) * rate["output"]
+    input_cost = (prompt_tokens / 1_000_000) * rate["input"]
+    output_cost = (completion_tokens / 1_000_000) * rate["output"]
     return round(input_cost + output_cost, 6)
 
 
