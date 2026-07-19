@@ -71,6 +71,7 @@ class CategorizationMetrics:
     batch_count: int = 0
     batch_failure_count: int = 0
     llm_duration_ms: float = 0.0
+    coa_context_tokens: int = 0
 
     # Memory
     memory_rules_applied: int = 0
@@ -119,6 +120,7 @@ class CategorizationMetrics:
             "batch_count": self.batch_count,
             "batch_failure_count": self.batch_failure_count,
             "llm_duration_ms": round(self.llm_duration_ms, 2),
+            "coa_context_tokens": self.coa_context_tokens,
             "memory_rules_applied": self.memory_rules_applied,
         }
 
@@ -192,6 +194,7 @@ def compute_categorization_metrics(
     batch_failure_count: int = 0,
     llm_duration_ms: float = 0.0,
     memory_rules_applied: int = 0,
+    coa_context_tokens: int = 0,
 ) -> CategorizationMetrics:
     """
     Compute a full CategorizationMetrics snapshot from categorized statement data.
@@ -202,6 +205,10 @@ def compute_categorization_metrics(
         batch_failure_count: Number of LLM batches that failed.
         llm_duration_ms: Total wall-clock time spent in LLM calls.
         memory_rules_applied: Number of learned memory corrections applied.
+        coa_context_tokens: Total tokens spent on CoA context across all batches —
+            the full CoA dump by default, or a RAG-retrieved subset when
+            Config.USE_RAG_COA_RETRIEVAL is on. Useful as a before/after
+            comparison of prompt size.
 
     Returns:
         CategorizationMetrics dataclass with all computed fields.
@@ -211,6 +218,7 @@ def compute_categorization_metrics(
     metrics.batch_failure_count = batch_failure_count
     metrics.llm_duration_ms = llm_duration_ms
     metrics.memory_rules_applied = memory_rules_applied
+    metrics.coa_context_tokens = coa_context_tokens
 
     # (total_items, valid_items) per section type
     section_counts: Dict[str, Tuple[int, int]] = {

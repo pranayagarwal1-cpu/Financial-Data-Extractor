@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Persisted Chroma vector index for CoA retrieval (rebuilt from coa_data.json)
+coa/.chroma/
+
 # C extensions
 *.so
 

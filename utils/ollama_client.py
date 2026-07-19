@@ -20,3 +20,8 @@ atexit.register(_close_client)
 def chat(*, model: str, messages: list, **kwargs):
     """Call ollama.chat via the shared Client instance."""
     return _client.chat(model=model, messages=messages, **kwargs)
+
+
+def embed(*, model: str, input):
+    """Call ollama.embed via the shared Client instance."""
+    return _client.embed(model=model, input=input)
