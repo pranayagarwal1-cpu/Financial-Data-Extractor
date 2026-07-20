@@ -9,6 +9,7 @@ at that local port, not by this process — it always binds to localhost.
 
 import base64
 import os
+import threading
 import uuid
 from pathlib import Path
 
@@ -47,12 +48,56 @@ mcp = FastMCP(
 # until the server process restarts.
 _run_cache: dict[str, dict] = {}
 
+# Background-task status/results, keyed by a task_id handed out immediately
+# when extract_financial_statements is called. A Cloudflare tunnel (and most
+# HTTP proxies) will drop a connection that sits open for the several minutes
+# a full extraction can take, so the tool returns right away and the caller
+# polls get_extraction_status instead of blocking on one long request.
+_tasks: dict[str, dict] = {}
+_tasks_lock = threading.Lock()
+
 
 def _stringify_keys(d: dict) -> dict:
     return {
         (k.value if hasattr(k, "value") else str(k)): v
         for k, v in d.items()
     }
+
+
+def _run_extraction(task_id: str, tmp_path: Path, statement_types: str, enable_categorization: bool) -> None:
+    """Runs the actual pipeline on a background thread and stores the result under task_id."""
+    try:
+        types = parse_statement_types(statement_types)
+        final_state = process_single_pdf(
+            str(tmp_path), types, enable_categorization=enable_categorization
+        )
+
+        run_id = final_state.get("run_id")
+        review_queue = final_state.get("review_queue", [])
+        if run_id:
+            _run_cache[run_id] = {"review_queue": review_queue}
+
+        output_files = {}
+        for path_str in final_state.get("output_files", []):
+            p = Path(path_str)
+            if p.exists():
+                output_files[p.name] = base64.b64encode(p.read_bytes()).decode("ascii")
+
+        result = {
+            "run_id": run_id,
+            "error_message": final_state.get("error_message"),
+            "evaluation_result": _stringify_keys(final_state.get("evaluation_result", {})),
+            "categorization_summary": final_state.get("categorization_summary", {}),
+            "review_queue": review_queue,
+            "output_files": output_files,
+        }
+        with _tasks_lock:
+            _tasks[task_id] = {"status": "completed", **result}
+    except Exception as e:
+        with _tasks_lock:
+            _tasks[task_id] = {"status": "failed", "error": str(e)}
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 @mcp.tool()
@@ -62,46 +107,46 @@ def extract_financial_statements(
     statement_types: str = "all",
     enable_categorization: bool = True,
 ) -> dict:
-    """Extract Balance Sheet / Income Statement / Cash Flow data from a base64-encoded PDF.
+    """Start extracting Balance Sheet / Income Statement / Cash Flow data from a base64-encoded PDF.
 
-    Returns evaluation scores, categorization summary, the human-review queue,
-    and the generated Excel/JSON output files inline as base64 (a remote
-    caller has no access to this machine's filesystem).
+    Returns immediately with a task_id — the extraction runs in the
+    background (it can take several minutes) and does not block this call.
+    Poll get_extraction_status(task_id) for progress and the final result
+    (evaluation scores, categorization summary, review queue, and the
+    generated Excel/JSON files inline as base64).
     """
     pdf_bytes = base64.b64decode(pdf_base64)
     if len(pdf_bytes) > MAX_UPLOAD_BYTES:
         return {"error": f"PDF exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit"}
 
-    tmp_path = TMP_DIR / f"{uuid.uuid4().hex}_{Path(filename).name}"
+    task_id = uuid.uuid4().hex[:12]
+    tmp_path = TMP_DIR / f"{task_id}_{Path(filename).name}"
     tmp_path.write_bytes(pdf_bytes)
 
-    try:
-        types = parse_statement_types(statement_types)
-        final_state = process_single_pdf(
-            str(tmp_path), types, enable_categorization=enable_categorization
-        )
-    finally:
-        tmp_path.unlink(missing_ok=True)
+    with _tasks_lock:
+        _tasks[task_id] = {"status": "running"}
 
-    run_id = final_state.get("run_id")
-    review_queue = final_state.get("review_queue", [])
-    if run_id:
-        _run_cache[run_id] = {"review_queue": review_queue}
+    thread = threading.Thread(
+        target=_run_extraction,
+        args=(task_id, tmp_path, statement_types, enable_categorization),
+        daemon=True,
+    )
+    thread.start()
 
-    output_files = {}
-    for path_str in final_state.get("output_files", []):
-        p = Path(path_str)
-        if p.exists():
-            output_files[p.name] = base64.b64encode(p.read_bytes()).decode("ascii")
+    return {"task_id": task_id, "status": "started"}
 
-    return {
-        "run_id": run_id,
-        "error_message": final_state.get("error_message"),
-        "evaluation_result": _stringify_keys(final_state.get("evaluation_result", {})),
-        "categorization_summary": final_state.get("categorization_summary", {}),
-        "review_queue": review_queue,
-        "output_files": output_files,
-    }
+
+@mcp.tool()
+def get_extraction_status(task_id: str) -> dict:
+    """Poll for the status/result of an extraction started by extract_financial_statements.
+
+    Returns {"status": "running"}, {"status": "completed", ...full result...},
+    {"status": "failed", "error": ...}, or {"status": "unknown"} for an
+    unrecognized task_id (e.g. after a server restart — task status is
+    in-memory only, not persisted).
+    """
+    with _tasks_lock:
+        return _tasks.get(task_id, {"status": "unknown"})
 
 
 @mcp.tool()
