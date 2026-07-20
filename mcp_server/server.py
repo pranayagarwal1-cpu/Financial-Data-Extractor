@@ -8,10 +8,12 @@ at that local port, not by this process — it always binds to localhost.
 """
 
 import base64
+import os
 import uuid
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from main import ensure_directories, process_single_pdf, parse_statement_types, TMP_DIR
 from coa.chart_of_accounts import search_accounts
@@ -22,7 +24,22 @@ MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 ensure_directories()
 
-mcp = FastMCP("financial-extractor", stateless_http=True)
+# DNS-rebinding protection checks the incoming Host header against this
+# allowlist. Localhost is always allowed; add the public hostname(s) you're
+# tunneling through (e.g. a Cloudflare Tunnel URL) via MCP_ALLOWED_HOSTS,
+# comma-separated, without the scheme (e.g. "my-tunnel.trycloudflare.com").
+_extra_hosts = [h.strip() for h in os.environ.get("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+_allowed_hosts = ["127.0.0.1:8765", "localhost:8765", *_extra_hosts]
+_allowed_origins = [f"https://{h}" for h in _extra_hosts] + [f"http://{h}" for h in _allowed_hosts]
+
+mcp = FastMCP(
+    "financial-extractor",
+    stateless_http=True,
+    transport_security=TransportSecuritySettings(
+        allowed_hosts=_allowed_hosts,
+        allowed_origins=_allowed_origins,
+    ),
+)
 
 # In-memory cache of the last review_queue per run_id. Not persisted —
 # the extraction pipeline's own metrics files only store a count, not the

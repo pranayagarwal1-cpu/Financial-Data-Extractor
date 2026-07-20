@@ -6,6 +6,9 @@ __pycache__/
 # Persisted Chroma vector index for CoA retrieval (rebuilt from coa_data.json)
 coa/.chroma/
 
+# Local MCP client config — carries the bearer token for the MCP server
+.mcp.json
+
 # C extensions
 *.so
 
