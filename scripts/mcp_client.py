@@ -7,9 +7,11 @@ Why this exists: when an LLM-driven MCP client (e.g. Claude Code) calls
 extract_financial_statements, the model itself has to read the PDF and emit
 the base64-encoded bytes as part of the tool call it generates — for a
 100KB+ file that's 100K+ characters of pure token cost, plus real risk of
-truncation/corruption on a string that long. This script does the base64
-encoding and the MCP call in a plain Python process instead: the file bytes
-never pass through a model's token stream, only the final summary does.
+truncation/corruption on a string that long. This script sidesteps that
+two ways: it does the upload as a plain HTTP multipart POST (not an MCP
+tool call — see mcp_server/server.py's /upload route for why that matters),
+and does the base64-decoding of results in a plain Python process, so file
+bytes never pass through a model's token stream in either direction.
 
 Usage:
     python scripts/mcp_client.py extract --pdf input/report.pdf
@@ -31,11 +33,33 @@ import os
 import sys
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
+import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 DEFAULT_TIMEOUT = timedelta(seconds=300)
+
+
+def _upload_url(mcp_url: str) -> str:
+    """Derive the /upload endpoint's URL from the MCP server's URL (same scheme+host)."""
+    parts = urlsplit(mcp_url)
+    return urlunsplit((parts.scheme, parts.netloc, "/upload", "", ""))
+
+
+async def _upload_file(url: str, token: str, pdf_path: Path) -> str:
+    """POST the file as plain multipart/form-data (not an MCP tool call) and return its upload_id."""
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient() as client:
+        with open(pdf_path, "rb") as f:
+            files = {"file": (pdf_path.name, f, "application/pdf")}
+            response = await client.post(_upload_url(url), headers=headers, files=files, timeout=120)
+    response.raise_for_status()
+    data = response.json()
+    if "upload_id" not in data:
+        raise RuntimeError(f"Upload failed: {data}")
+    return data["upload_id"]
 
 
 def _resolve(url: str | None, token: str | None) -> tuple[str, str]:
@@ -84,11 +108,11 @@ async def _extract_and_poll(url, token, pdf_path, statement_types, enable_catego
     open long enough to hit a proxy/tunnel timeout, no matter how long the
     overall extraction takes.
     """
-    pdf_b64 = base64.b64encode(pdf_path.read_bytes()).decode("ascii")
+    upload_id = await _upload_file(url, token, pdf_path)
+    print(f"Uploaded (upload_id={upload_id}), starting extraction...", file=sys.stderr)
 
     start_result = await _call_tool(url, token, "extract_financial_statements", {
-        "pdf_base64": pdf_b64,
-        "filename": pdf_path.name,
+        "upload_id": upload_id,
         "statement_types": statement_types,
         "enable_categorization": enable_categorization,
     })

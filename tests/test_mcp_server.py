@@ -8,8 +8,10 @@ task lifecycle (with process_single_pdf mocked out) are exercised here.
 import asyncio
 import base64
 import time
+import uuid
 from pathlib import Path
 
+import httpx
 import pytest
 
 from mcp_server.auth import BearerAuthMiddleware
@@ -23,6 +25,25 @@ from mcp_server.server import (
     submit_categorization_correction,
 )
 import utils.memory_manager as memory_manager
+
+pytestmark = pytest.mark.anyio
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+def _stage_upload(tmp_path, content: bytes = b"%PDF-fake") -> str:
+    """Directly register a fake upload (bypassing the real /upload HTTP route) —
+    for tests that only care about the extraction lifecycle, not the upload
+    mechanism itself. TestUploadEndpoint below tests /upload directly."""
+    upload_id = uuid.uuid4().hex[:12]
+    staged_path = tmp_path / f"{upload_id}_test.pdf"
+    staged_path.write_bytes(content)
+    with server_mod._uploads_lock:
+        server_mod._uploads[upload_id] = staged_path
+    return upload_id
 
 
 class TestSearchCoaAccounts:
@@ -84,9 +105,9 @@ class TestExtractFinancialStatementsAsync:
         monkeypatch.setattr(server_mod, "process_single_pdf", slow_process)
         monkeypatch.setattr(server_mod, "TMP_DIR", tmp_path)
 
-        pdf_b64 = base64.b64encode(b"%PDF-fake").decode()
+        upload_id = _stage_upload(tmp_path)
         start = time.time()
-        result = extract_financial_statements(pdf_base64=pdf_b64, filename="test.pdf")
+        result = extract_financial_statements(upload_id=upload_id)
         elapsed = time.time() - start
 
         assert result["status"] == "started"
@@ -106,8 +127,8 @@ class TestExtractFinancialStatementsAsync:
         monkeypatch.setattr(server_mod, "process_single_pdf", fake_process)
         monkeypatch.setattr(server_mod, "TMP_DIR", tmp_path)
 
-        pdf_b64 = base64.b64encode(b"%PDF-fake").decode()
-        result = extract_financial_statements(pdf_base64=pdf_b64, filename="test.pdf")
+        upload_id = _stage_upload(tmp_path)
+        result = extract_financial_statements(upload_id=upload_id)
 
         status = _wait_for_terminal_status(result["task_id"])
         assert status["status"] == "completed"
@@ -121,8 +142,8 @@ class TestExtractFinancialStatementsAsync:
         monkeypatch.setattr(server_mod, "process_single_pdf", failing_process)
         monkeypatch.setattr(server_mod, "TMP_DIR", tmp_path)
 
-        pdf_b64 = base64.b64encode(b"%PDF-fake").decode()
-        result = extract_financial_statements(pdf_base64=pdf_b64, filename="test.pdf")
+        upload_id = _stage_upload(tmp_path)
+        result = extract_financial_statements(upload_id=upload_id)
 
         status = _wait_for_terminal_status(result["task_id"])
         assert status["status"] == "failed"
@@ -136,8 +157,8 @@ class TestExtractFinancialStatementsAsync:
         monkeypatch.setattr(server_mod, "process_single_pdf", fake_process)
         monkeypatch.setattr(server_mod, "TMP_DIR", tmp_path)
 
-        pdf_b64 = base64.b64encode(b"%PDF-fake").decode()
-        result = extract_financial_statements(pdf_base64=pdf_b64, filename="test.pdf")
+        upload_id = _stage_upload(tmp_path)
+        result = extract_financial_statements(upload_id=upload_id)
         _wait_for_terminal_status(result["task_id"])
 
         assert list(tmp_path.iterdir()) == []
@@ -146,6 +167,80 @@ class TestExtractFinancialStatementsAsync:
 class TestGetExtractionStatus:
     def test_unknown_task_id_returns_unknown(self):
         assert get_extraction_status("no-such-task") == {"status": "unknown"}
+
+
+class TestExtractFinancialStatementsUnknownUpload:
+    def test_unknown_upload_id_returns_error(self):
+        result = extract_financial_statements(upload_id="no-such-upload")
+        assert "error" in result
+
+    def test_upload_id_is_single_use(self, tmp_path, monkeypatch):
+        def fake_process(pdf_path, types, enable_categorization=True):
+            return {"run_id": "r1", "output_files": [], "review_queue": []}
+
+        monkeypatch.setattr(server_mod, "process_single_pdf", fake_process)
+        monkeypatch.setattr(server_mod, "TMP_DIR", tmp_path)
+
+        upload_id = _stage_upload(tmp_path)
+        first = extract_financial_statements(upload_id=upload_id)
+        assert "task_id" in first
+        _wait_for_terminal_status(first["task_id"])
+
+        second = extract_financial_statements(upload_id=upload_id)
+        assert "error" in second
+
+
+class TestUploadEndpoint:
+    """Exercises the real /upload Starlette route end-to-end via ASGI —
+    not an MCP tool call, so this is tested as a plain HTTP request."""
+
+    async def _post(self, content: bytes, token: str | None, filename: str = "test.pdf"):
+        transport = httpx.ASGITransport(app=server_mod.app)
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            files = {"file": (filename, content, "application/pdf")}
+            return await client.post("/upload", headers=headers, files=files)
+
+    def _also_unlock_outer_middleware(self, monkeypatch, key: str):
+        """server_mod.app, in non-OAuth mode, is BearerAuthMiddleware(...) — it read
+        MCP_API_KEY once at import time, before any test's monkeypatch.setenv could
+        run, so it needs patching directly too for a request to get past both layers."""
+        if isinstance(server_mod.app, BearerAuthMiddleware):
+            monkeypatch.setattr(server_mod.app, "api_key", key)
+
+    async def test_requires_auth(self, monkeypatch):
+        monkeypatch.setenv("MCP_API_KEY", "secret123")
+        resp = await self._post(b"%PDF-fake", token=None)
+        assert resp.status_code == 401
+
+    async def test_rejects_wrong_token(self, monkeypatch):
+        monkeypatch.setenv("MCP_API_KEY", "secret123")
+        resp = await self._post(b"%PDF-fake", token="wrong")
+        assert resp.status_code == 401
+
+    async def test_accepts_valid_upload(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("MCP_API_KEY", "secret123")
+        self._also_unlock_outer_middleware(monkeypatch, "secret123")
+        monkeypatch.setattr(server_mod, "TMP_DIR", tmp_path)
+
+        resp = await self._post(b"%PDF-fake-content", token="secret123")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "upload_id" in data
+        with server_mod._uploads_lock:
+            staged = server_mod._uploads.pop(data["upload_id"], None)
+        assert staged is not None and staged.read_bytes() == b"%PDF-fake-content"
+
+    async def test_rejects_oversized_file(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("MCP_API_KEY", "secret123")
+        self._also_unlock_outer_middleware(monkeypatch, "secret123")
+        monkeypatch.setattr(server_mod, "TMP_DIR", tmp_path)
+        monkeypatch.setattr(server_mod, "MAX_UPLOAD_BYTES", 10)
+
+        resp = await self._post(b"this is definitely more than 10 bytes", token="secret123")
+
+        assert resp.status_code == 413
 
 
 def _run_asgi(app, auth_header: bytes | None):
