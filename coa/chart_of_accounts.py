@@ -261,5 +261,38 @@ def serialize_coa_for_prompt(include_descriptions: bool = True) -> str:
     return "\n".join(lines)
 
 
+def serialize_coa_subset_for_prompt(codes: List[str], include_descriptions: bool = True) -> str:
+    """
+    Serialize a specific subset of CoA accounts for inclusion in an LLM prompt.
+
+    Same grouped-by-series format as serialize_coa_for_prompt, but restricted
+    to the given account codes. Used by the RAG-retrieval categorization path
+    to avoid dumping the entire CoA into every batch prompt.
+    """
+    codes_set = set(codes)
+    groups = [
+        ("REVENUE ACCOUNTS (5000 series)", REVENUE_ACCOUNTS),
+        ("DIRECT COSTS (6000 series)", DIRECT_COST_ACCOUNTS),
+        ("OPERATING EXPENSES (7000 series)", OPERATING_EXPENSE_ACCOUNTS),
+        ("OTHER EXPENSES - DEPRECIATION / AMORTIZATION (8000 series)", OTHER_EXPENSE_ACCOUNTS),
+        ("OTHER INCOME / OTHER EXPENSE / INTEREST / TAXES (9000 series)", OTHER_INCOME_EXPENSE_ACCOUNTS),
+    ]
+
+    lines = []
+    for title, accounts in groups:
+        matched = {code: acc for code, acc in accounts.items() if code in codes_set}
+        if not matched:
+            continue
+        lines.append(f"=== {title} ===")
+        for code in sorted(matched.keys()):
+            acc = matched[code]
+            if include_descriptions and acc.description:
+                lines.append(f"{code} - {acc.name}: {acc.description[:200]}")
+            else:
+                lines.append(f"{code} - {acc.name}")
+
+    return "\n".join(lines)
+
+
 # Initialize on module load
 _load_accounts()

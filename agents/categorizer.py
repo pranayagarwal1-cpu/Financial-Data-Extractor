@@ -15,7 +15,14 @@ from typing import Dict, List, Optional
 
 from utils.llm_client import chat
 
-from coa.chart_of_accounts import COA_ACCOUNTS, REVENUE_ACCOUNTS, DIRECT_COST_ACCOUNTS, OPERATING_EXPENSE_ACCOUNTS, serialize_coa_for_prompt
+from coa.chart_of_accounts import (
+    COA_ACCOUNTS,
+    REVENUE_ACCOUNTS,
+    DIRECT_COST_ACCOUNTS,
+    OPERATING_EXPENSE_ACCOUNTS,
+    serialize_coa_for_prompt,
+    serialize_coa_subset_for_prompt,
+)
 from config import Config
 from utils.vlm_utils import StatementType
 
@@ -124,15 +131,27 @@ class BatchResult:
     batch_count: int = 0
     batch_failure_count: int = 0
     llm_duration_ms: float = 0.0
+    coa_context_tokens: int = 0
 
 
-def _llm_match_single_batch(batch_items: List[dict], run_id: str, is_retry: bool, practice_id: str) -> List[dict]:
-    """Call LLM for a single batch of items (worker for parallel execution)."""
+def _llm_match_single_batch(batch_items: List[dict], run_id: str, is_retry: bool, practice_id: str) -> tuple:
+    """Call LLM for a single batch of items (worker for parallel execution).
+
+    Returns:
+        (results, coa_context_tokens) — the parsed LLM results, and the token
+        count of the CoA context that was embedded in the prompt (full dump,
+        or a RAG-retrieved subset when Config.USE_RAG_COA_RETRIEVAL is on).
+    """
     from utils.observability import get_observability
     obs = get_observability()
 
-    # Serialize CoA for prompt context (include descriptions for semantic matching)
-    coa_context = serialize_coa_for_prompt(include_descriptions=True)
+    if Config.USE_RAG_COA_RETRIEVAL:
+        from coa.retriever import retrieve_candidates
+        candidate_map = retrieve_candidates(batch_items, k=10)
+        candidate_codes = sorted({code for codes in candidate_map.values() for code in codes})
+        coa_context = serialize_coa_subset_for_prompt(candidate_codes, include_descriptions=True)
+    else:
+        coa_context = serialize_coa_for_prompt(include_descriptions=True)
 
     # Prepare items for batch processing
     items_json = json.dumps([
@@ -302,6 +321,9 @@ Set needs_review=true for:
     else:
         model = Config.EXTRACTION_MODEL
 
+    from utils.token_counter import count_tokens
+    coa_context_tokens = count_tokens(coa_context, model)
+
     start_time = time.time()
 
     response = chat(
@@ -330,11 +352,12 @@ Set needs_review=true for:
 
     try:
         results = json.loads(content)
-        return results
+        return results, coa_context_tokens
     except json.JSONDecodeError as e:
         logging.error(f"Failed to parse LLM response: {e}")
         # Return empty results on parse failure
-        return [{"label": item["label"], "error": f"LLM parse error: {e}"} for item in batch_items]
+        error_results = [{"label": item["label"], "error": f"LLM parse error: {e}"} for item in batch_items]
+        return error_results, coa_context_tokens
 
 
 def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: bool = False, practice_id: str = None) -> BatchResult:
@@ -355,15 +378,15 @@ def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: b
         BatchResult with results list and metadata (batch_count, failures, duration)
     """
     if not unmatched_items:
-        return BatchResult(results=[], batch_count=0, batch_failure_count=0, llm_duration_ms=0.0)
+        return BatchResult(results=[], batch_count=0, batch_failure_count=0, llm_duration_ms=0.0, coa_context_tokens=0)
 
     llm_start = time.time()
 
     # No need to parallelize a single batch
     if len(unmatched_items) <= MAX_BATCH_SIZE:
-        results = _llm_match_single_batch(unmatched_items, run_id, is_retry, practice_id)
+        results, ctx_tokens = _llm_match_single_batch(unmatched_items, run_id, is_retry, practice_id)
         duration_ms = (time.time() - llm_start) * 1000
-        return BatchResult(results=results, batch_count=1, batch_failure_count=0, llm_duration_ms=duration_ms)
+        return BatchResult(results=results, batch_count=1, batch_failure_count=0, llm_duration_ms=duration_ms, coa_context_tokens=ctx_tokens)
 
     # Build batches
     batches = []
@@ -376,6 +399,7 @@ def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: b
 
     all_results = []
     failed_batches = []
+    total_ctx_tokens = 0
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     with ThreadPoolExecutor(max_workers=min(len(batches), 4)) as executor:
@@ -386,8 +410,9 @@ def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: b
         for future in as_completed(future_to_batch):
             batch_idx = future_to_batch[future]
             try:
-                batch_results = future.result()
+                batch_results, ctx_tokens = future.result()
                 all_results.extend(batch_results)
+                total_ctx_tokens += ctx_tokens
                 print(f"    Batch {batch_idx + 1}/{len(batches)} complete ({len(batch_results)} results)")
             except Exception as e:
                 logging.error(f"Batch {batch_idx + 1} failed: {e}")
@@ -402,8 +427,9 @@ def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: b
             if attempt > 1:
                 time.sleep(5)  # Brief cooldown between sequential retries
             try:
-                batch_results = _llm_match_single_batch(batch, run_id, is_retry, practice_id)
+                batch_results, ctx_tokens = _llm_match_single_batch(batch, run_id, is_retry, practice_id)
                 all_results.extend(batch_results)
+                total_ctx_tokens += ctx_tokens
                 print(f"    Retry batch {batch_idx + 1} complete ({len(batch_results)} results)")
             except Exception as e:
                 logging.error(f"Retry batch {batch_idx + 1} failed again: {e}")
@@ -416,6 +442,7 @@ def llm_match_batch(unmatched_items: List[dict], run_id: str = None, is_retry: b
         batch_count=len(batches),
         batch_failure_count=retry_failures,
         llm_duration_ms=duration_ms,
+        coa_context_tokens=total_ctx_tokens,
     )
 
 
@@ -669,6 +696,7 @@ def categorizer_node(state: dict) -> dict:
     total_batch_count = 0
     total_batch_failures = 0
     total_llm_duration_ms = 0.0
+    total_coa_context_tokens = 0
 
     # Process each statement type
     for statement_type, data in extracted_data.items():
@@ -722,6 +750,7 @@ def categorizer_node(state: dict) -> dict:
                     total_batch_count += batch_res.batch_count
                     total_batch_failures += batch_res.batch_failure_count
                     total_llm_duration_ms += batch_res.llm_duration_ms
+                    total_coa_context_tokens += batch_res.coa_context_tokens
 
                     for llm_result in llm_results:
                         if "account_id" in llm_result:
@@ -749,6 +778,7 @@ def categorizer_node(state: dict) -> dict:
                 total_batch_count += batch_res.batch_count
                 total_batch_failures += batch_res.batch_failure_count
                 total_llm_duration_ms += batch_res.llm_duration_ms
+                total_coa_context_tokens += batch_res.coa_context_tokens
 
                 for llm_result in llm_results:
                     if "account_id" in llm_result:
@@ -775,6 +805,7 @@ def categorizer_node(state: dict) -> dict:
             total_batch_count += batch_res.batch_count
             total_batch_failures += batch_res.batch_failure_count
             total_llm_duration_ms += batch_res.llm_duration_ms
+            total_coa_context_tokens += batch_res.coa_context_tokens
 
             for llm_result in llm_results:
                 if "account_id" in llm_result:
@@ -812,6 +843,7 @@ def categorizer_node(state: dict) -> dict:
             batch_count=total_batch_count,
             batch_failure_count=total_batch_failures,
             llm_duration_ms=total_llm_duration_ms,
+            coa_context_tokens=total_coa_context_tokens,
         )
         cat_metrics_by_statement[st_name] = metrics.to_dict()
         obs.log_categorization_metrics(metrics.to_dict(), run_id)

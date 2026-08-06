@@ -70,3 +70,9 @@ class Config:
     ENABLE_OBSERVABILITY = os.getenv("ENABLE_OBSERVABILITY", "true").lower() == "true"
     METRICS_DIR = None  # Set at runtime
     LOGS_DIR = None     # Set at runtime
+
+    # RAG-assisted CoA retrieval — off by default; when enabled, the categorizer
+    # embeds line items and retrieves top-k candidate accounts instead of
+    # dumping the entire CoA into every categorization prompt.
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
+    USE_RAG_COA_RETRIEVAL = os.getenv("USE_RAG_COA_RETRIEVAL", "false").lower() == "true"

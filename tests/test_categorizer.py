@@ -2,10 +2,12 @@
 
 import pytest
 
+import agents.categorizer as categorizer_mod
 from agents.categorizer import (
     extract_line_items_from_statement,
     is_section_header,
 )
+from config import Config
 
 
 class TestIsSectionHeader:
@@ -93,3 +95,38 @@ class TestExtractLineItems:
     def test_handles_no_sections(self):
         assert extract_line_items_from_statement({}) == []
         assert extract_line_items_from_statement({"sections": []}) == []
+
+
+class TestRagCoaContextToggle:
+    """The RAG-retrieval path must be opt-in and produce a smaller prompt
+    than the full ~292-account CoA dump — the whole point of adding it."""
+
+    def _run_single_batch(self, monkeypatch, use_rag: bool) -> str:
+        captured = {}
+
+        def fake_chat(*, model, messages):
+            captured["prompt"] = messages[0]["content"]
+            return {"message": {"content": "[]"}}
+
+        monkeypatch.setattr(categorizer_mod, "chat", fake_chat)
+        monkeypatch.setattr(Config, "USE_RAG_COA_RETRIEVAL", use_rag)
+        monkeypatch.setattr(
+            "coa.retriever.retrieve_candidates",
+            lambda items, k=10: {item["label"]: ["5001"] for item in items},
+        )
+
+        batch_items = [{"label": "Vaccinations", "section": "REVENUE", "values": ["100"]}]
+        results, ctx_tokens = categorizer_mod._llm_match_single_batch(
+            batch_items, run_id=None, is_retry=False, practice_id=None
+        )
+        return captured["prompt"], ctx_tokens
+
+    def test_rag_path_produces_smaller_prompt_than_full_dump(self, monkeypatch):
+        full_prompt, full_tokens = self._run_single_batch(monkeypatch, use_rag=False)
+        rag_prompt, rag_tokens = self._run_single_batch(monkeypatch, use_rag=True)
+
+        assert len(rag_prompt) < len(full_prompt)
+        assert rag_tokens < full_tokens
+
+    def test_default_config_does_not_use_rag(self):
+        assert Config.USE_RAG_COA_RETRIEVAL is False
