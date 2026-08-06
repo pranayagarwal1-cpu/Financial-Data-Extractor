@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Financial Extractor</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 640px; margin: 40px auto; padding: 0 20px; color: #1a1a1a; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .subtitle { color: #666; font-size: 13px; margin-bottom: 24px; }
+  fieldset { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  legend { font-size: 13px; color: #666; padding: 0 6px; }
+  label { display: block; font-size: 13px; margin-bottom: 6px; color: #333; }
+  input[type="text"], input[type="password"], select { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+  input[type="file"] { margin-bottom: 8px; }
+  button { background: #1a1a1a; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-size: 14px; cursor: pointer; }
+  button:disabled { background: #999; cursor: not-allowed; }
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  #status { margin: 16px 0; font-size: 14px; color: #444; white-space: pre-line; }
+  #results { margin-top: 16px; }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+  .card h3 { margin: 0 0 8px; font-size: 14px; }
+  .file-link { display: inline-block; margin: 4px 8px 4px 0; padding: 6px 12px; background: #f0f0f0; border-radius: 6px; text-decoration: none; color: #1a1a1a; font-size: 13px; }
+  .error { color: #b3261e; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  td, th { text-align: left; padding: 4px 6px; border-bottom: 1px solid #eee; }
+</style>
+</head>
+<body>
+  <h1>Financial Statement Extractor</h1>
+  <div class="subtitle">Upload a PDF, get evaluation + categorization results — no AI client required for this step.</div>
+
+  <fieldset>
+    <legend>Access token</legend>
+    <input type="password" id="token" placeholder="Bearer token (MCP_API_KEY or an OAuth access token)" />
+  </fieldset>
+
+  <fieldset>
+    <legend>Extract</legend>
+    <input type="file" id="pdf-file" accept="application/pdf" />
+    <div class="row">
+      <label style="flex:1;margin:0">Statements
+        <select id="statement-types">
+          <option value="all">All</option>
+          <option value="balance_sheet">Balance sheet</option>
+          <option value="income_statement">Income statement</option>
+          <option value="cash_flow">Cash flow</option>
+        </select>
+      </label>
+      <label style="flex:1;margin:0"><input type="checkbox" id="enable-categorization" checked style="width:auto;display:inline" /> Categorize</label>
+    </div>
+    <button id="extract-btn">Extract</button>
+  </fieldset>
+
+  <div id="status"></div>
+  <div id="results"></div>
+
+<script>
+const tokenInput = document.getElementById('token');
+tokenInput.value = localStorage.getItem('mcp_token') || '';
+tokenInput.addEventListener('change', () => localStorage.setItem('mcp_token', tokenInput.value));
+
+function getToken() { return tokenInput.value.trim(); }
+function setStatus(msg, isError) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = isError ? 'error' : '';
+}
+
+async function uploadFile(file) {
+  const form = new FormData();
+  form.append('file', file);
+  const resp = await fetch('/upload', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${getToken()}` },
+    body: form,
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || `upload failed (${resp.status})`);
+  return data.upload_id;
+}
+
+async function callTool(name, args) {
+  const resp = await fetch('/mcp', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${getToken()}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, text/event-stream',
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', method: 'tools/call', params: { name, arguments: args }, id: Date.now() }),
+  });
+  const text = await resp.text();
+  if (resp.status === 401) throw new Error('Unauthorized — check your access token');
+
+  let jsonStr = text;
+  const dataLine = text.split('\n').find(l => l.startsWith('data: '));
+  if (dataLine) jsonStr = dataLine.slice('data: '.length);
+
+  const rpc = JSON.parse(jsonStr);
+  if (rpc.error) throw new Error(rpc.error.message || 'RPC error');
+
+  const result = rpc.result;
+  if (result.isError) {
+    throw new Error(result.content?.[0]?.text || 'tool call failed');
+  }
+  if (result.structuredContent) {
+    return result.structuredContent.result ?? result.structuredContent;
+  }
+  const t = result.content?.[0]?.text;
+  try { return JSON.parse(t); } catch { return t; }
+}
+
+function downloadFile(filename, base64content) {
+  const byteChars = atob(base64content);
+  const bytes = new Uint8Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+  const blob = new Blob([bytes]);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function renderResults(result) {
+  const el = document.getElementById('results');
+  if (result.status === 'failed') {
+    el.innerHTML = `<div class="card error">Extraction failed: ${result.error || 'unknown error'}</div>`;
+    return;
+  }
+  if (result.error_message) {
+    el.innerHTML = `<div class="card error">Pipeline error: ${result.error_message}</div>`;
+    return;
+  }
+
+  const cat = result.categorization_summary || {};
+  const files = result.output_files || {};
+  const reviewCount = (result.review_queue || []).length;
+
+  let html = `<div class="card"><h3>Summary</h3><table>
+    <tr><td>Run ID</td><td>${result.run_id || '—'}</td></tr>
+    <tr><td>Line items</td><td>${cat.total_line_items ?? '—'}</td></tr>
+    <tr><td>Auto-categorized</td><td>${cat.llm_matched ?? cat.auto_categorized ?? '—'}</td></tr>
+    <tr><td>Needs review</td><td>${reviewCount}</td></tr>
+  </table></div>`;
+
+  const fileNames = Object.keys(files);
+  if (fileNames.length) {
+    html += `<div class="card"><h3>Output files</h3>`;
+    for (const name of fileNames) {
+      html += `<a class="file-link" href="#" data-name="${name}">${name}</a>`;
+    }
+    html += `</div>`;
+  }
+  el.innerHTML = html;
+
+  el.querySelectorAll('.file-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const name = link.dataset.name;
+      downloadFile(name, files[name]);
+    });
+  });
+}
+
+document.getElementById('extract-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('extract-btn');
+  const fileInput = document.getElementById('pdf-file');
+  const file = fileInput.files[0];
+  if (!file) { setStatus('Choose a PDF first.', true); return; }
+  if (!getToken()) { setStatus('Enter your access token first.', true); return; }
+
+  const statementTypes = document.getElementById('statement-types').value;
+  const enableCategorization = document.getElementById('enable-categorization').checked;
+
+  btn.disabled = true;
+  document.getElementById('results').innerHTML = '';
+  try {
+    setStatus('Uploading...');
+    const uploadId = await uploadFile(file);
+
+    setStatus('Starting extraction...');
+    const start = await callTool('extract_financial_statements', {
+      upload_id: uploadId,
+      statement_types: statementTypes,
+      enable_categorization: enableCategorization,
+    });
+    if (start.error) throw new Error(start.error);
+    const taskId = start.task_id;
+
+    let waited = 0;
+    while (true) {
+      await new Promise(r => setTimeout(r, 5000));
+      waited += 5;
+      setStatus(`Extracting... (${waited}s elapsed)`);
+      const status = await callTool('get_extraction_status', { task_id: taskId });
+      if (status.status !== 'running') {
+        setStatus(status.status === 'completed' ? 'Done.' : 'Failed.', status.status !== 'completed');
+        renderResults(status);
+        break;
+      }
+      if (waited > 1200) throw new Error('Timed out after 20 minutes');
+    }
+  } catch (err) {
+    setStatus(err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

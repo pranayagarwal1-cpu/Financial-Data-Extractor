@@ -16,7 +16,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse
 
 from main import ensure_directories, process_single_pdf, parse_statement_types, TMP_DIR
 from coa.chart_of_accounts import search_accounts
@@ -165,6 +165,24 @@ async def upload_file(request: Request) -> JSONResponse:
         _uploads[upload_id] = staged_path
 
     return JSONResponse({"upload_id": upload_id})
+
+
+_UPLOAD_UI_HTML = (Path(__file__).parent / "upload_ui.html").read_text()
+
+
+@mcp.custom_route("/upload-ui", methods=["GET"])
+async def upload_ui(request: Request) -> HTMLResponse:
+    """A self-contained browser page for the whole upload+extract flow.
+
+    This closes the gap for MCP clients with no code-execution ability
+    (e.g. Claude Desktop): a human uploads the PDF here directly through a
+    normal file picker, and the page's own JavaScript does the upload,
+    tool call, and polling — no AI client involved in the mechanical work
+    at all. The page itself is intentionally unauthenticated (it's just
+    static markup); the actual /upload and /mcp calls it makes still
+    require the bearer token entered on the page.
+    """
+    return HTMLResponse(_UPLOAD_UI_HTML)
 
 
 def _run_extraction(task_id: str, tmp_path: Path, statement_types: str, enable_categorization: bool) -> None:
